@@ -57,7 +57,7 @@ events as searchable launcher entries.
 - **`MeetingLink`** — the join link plus its `Provider` and the account whose calendar carried it.
   Ten named services, plus `.generic` for any other `http(s)` link the event carries.
 - **`MeetingEvent`** — one occurrence, flattened out of `EKEvent`.
-- **`UpcomingWindow`** — `agenda`, `carded`, `joinable` and `countdown`.
+- **`UpcomingWindow`** — `agenda`, `carded`, `joinable`, `countdown` and a row's `rowPill`.
 - **`MeetingDay`** — the Today / Tomorrow buckets, mirroring the clipboard's `DateBucket`.
 - **`MeetingSpan`** — how far ahead the store reads, and the phrasing that names those days.
 - **`MenuBarSummary`** — which event the menu bar carries, and for how long.

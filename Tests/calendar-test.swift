@@ -25,7 +25,7 @@ struct CalendarTests {
         cardWindow()
         chordFallsBackWiderThanTheCard()
         countdownStrings()
-        rowCountdowns()
+        rowPills()
         dayBuckets()
         readSpan()
         menuBarWindow()
@@ -271,17 +271,36 @@ struct CalendarTests {
             "a meeting that is over is not offered")
     }
 
-    static func rowCountdowns() {
-        let meeting = event(id: "review", start: 120, minutes: 30)
-        func pill(_ offset: TimeInterval) -> String? {
-            UpcomingWindow.rowCountdown(for: meeting, now: at(120).addingTimeInterval(offset))
+    static func rowPills() {
+        var calendar = Self.calendar
+        calendar.locale = Locale(identifier: "en_US")
+        let start = date(year: 2026, month: 9, day: 23, hour: 17)
+        let meeting = event(id: "review", starting: start, minutes: 30)
+        func pill(_ offset: TimeInterval) -> UpcomingWindow.RowPill? {
+            UpcomingWindow.rowPill(
+                for: meeting, now: start.addingTimeInterval(offset), calendar: calendar)
         }
-        expect(pill(-60 * 60) == "in 60 min", "exactly an hour out still earns a pill")
-        expect(pill(-60 * 60 - 1) == nil, "past the hour a row shows only its time")
-        expect(pill(-25 * 60) == "in 25 min", "inside the hour a row counts down")
-        expect(pill(0) == "Now", "the start reads as Now")
-        expect(pill(29 * 60) == "Now", "a meeting under way stays Now")
+        expect(
+            pill(-60 * 60) == .init(text: "in 60 min", isImminent: true),
+            "exactly an hour out is imminent")
+        expect(
+            pill(-3 * 60 * 60) == .init(text: "in 3 hr", isImminent: false),
+            "later today counts down in hours")
+        expect(
+            pill(-18 * 60 * 60) == .init(text: "Wed, Sep 23", isImminent: false),
+            "a meeting tomorrow names its date")
+        expect(
+            pill(-40 * 60)?.text == "in 40 min", "inside the hour a countdown beats the date")
+        expect(pill(0)?.text == "Now", "the start reads as Now")
+        expect(pill(29 * 60) == .init(text: "Now", isImminent: true), "a meeting under way stays Now")
         expect(pill(30 * 60) == nil, "a finished meeting earns no pill")
+
+        let lateNight = date(year: 2026, month: 9, day: 23, hour: 23, minute: 30)
+        let pastMidnight = event(id: "late", starting: lateNight.addingTimeInterval(40 * 60))
+        expect(
+            UpcomingWindow.rowPill(for: pastMidnight, now: lateNight, calendar: calendar)?.text
+                == "in 40 min",
+            "a meeting just past midnight still counts down")
     }
 
     static func countdownStrings() {
