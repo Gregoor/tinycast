@@ -35,7 +35,6 @@ struct SettingsBackup: Codable {
         var appearance: String?
         var calcNumberStyle: String?
         var interfaceSize: String?
-        var paletteTransparency: Int?
         var compactMode: Bool?
         var showFavoritesInCompactMode: Bool?
         var searchScopes: [String]?
@@ -141,7 +140,6 @@ extension SettingsBackup {
             appearance: s.appearance.rawValue,
             calcNumberStyle: s.calcNumberStyle.rawValue,
             interfaceSize: s.interfaceSize.rawValue,
-            paletteTransparency: s.paletteTransparency,
             compactMode: s.compactMode,
             showFavoritesInCompactMode: s.showFavoritesInCompactMode,
             searchScopes: s.searchScopes,
@@ -344,10 +342,6 @@ extension SettingsBackup {
         }
         if let raw = s.calcNumberStyle, let style = CalcNumberStyle(rawValue: raw) {
             settings.calcNumberStyle = style
-            count += 1
-        }
-        if let value = s.paletteTransparency, (-100...100).contains(value) {
-            settings.paletteTransparency = value
             count += 1
         }
         if let flag = s.compactMode {

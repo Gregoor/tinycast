@@ -206,10 +206,6 @@ final class AppSettings {
         didSet { defaults.set(interfaceSize.rawValue, forKey: Key.interfaceSize.rawValue) }
     }
 
-    var paletteTransparency: Int {
-        didSet { defaults.set(paletteTransparency, forKey: Key.paletteTransparency.rawValue) }
-    }
-
     /// Summon the launcher as a slim search bar that expands into the full list on typing.
     var compactMode: Bool {
         didSet { defaults.set(compactMode, forKey: Key.compactMode.rawValue) }
@@ -574,7 +570,6 @@ final class AppSettings {
         interfaceSize =
             defaults.string(forKey: Key.interfaceSize.rawValue).flatMap(InterfaceSize.init)
             ?? .standard
-        paletteTransparency = max(-100, min(100, defaults.integer(forKey: Key.paletteTransparency.rawValue)))
         compactMode = defaults.bool(forKey: Key.compactMode.rawValue)
         // Defaults to true, so absence must be distinguished from a stored `false`.
         showFavoritesInCompactMode =
