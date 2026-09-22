@@ -5,6 +5,7 @@ enum SettingsKey {
     /// The launcher icon's visibility — read by its `MenuBarExtra` and the General toggle.
     static let showInMenuBar = "showInMenuBar"
     static let calendarMenuBarDisplay = "calendarMenuBarDisplay"
+    static let calendarMenuBarHidesWhenEmpty = "calendarMenuBarHidesWhenEmpty"
 }
 
 /// Delay before a closed palette pops to root; an unset key reads as `.immediately`.
@@ -441,6 +442,13 @@ final class AppSettings {
         }
     }
 
+    var calendarMenuBarHidesWhenEmpty: Bool {
+        didSet {
+            defaults.set(
+                calendarMenuBarHidesWhenEmpty, forKey: Key.calendarMenuBarHidesWhenEmpty.rawValue)
+        }
+    }
+
     var hideCurrentEvent: HideCurrentEvent {
         didSet { defaults.set(hideCurrentEvent.rawValue, forKey: Key.hideCurrentEvent.rawValue) }
     }
@@ -656,6 +664,8 @@ final class AppSettings {
         menuBarLinkedEventsOnly =
             defaults.object(forKey: Key.menuBarLinkedEventsOnly.rawValue) == nil
             || defaults.bool(forKey: Key.menuBarLinkedEventsOnly.rawValue)
+        calendarMenuBarHidesWhenEmpty =
+            defaults.bool(forKey: Key.calendarMenuBarHidesWhenEmpty.rawValue)
         hideCurrentEvent =
             defaults.object(forKey: Key.hideCurrentEvent.rawValue)
             .flatMap { $0 as? Int }

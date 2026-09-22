@@ -2,6 +2,7 @@ import AppKit
 
 /// Owns joining a meeting: the consent gate, the card's and the chord's actions, feature presence.
 @MainActor
+@Observable
 final class CalendarCoordinator {
     private let store: CalendarStore
     private let clock: MeetingClock
@@ -12,13 +13,16 @@ final class CalendarCoordinator {
     private unowned let core: AppCore
 
     /// Its own surface, the way `NotesCoordinator` owns the notes window.
-    private lazy var cameraPreview = CameraPreviewController()
+    @ObservationIgnored private lazy var cameraPreview = CameraPreviewController()
 
-    private var paletteVisible = false
+    @ObservationIgnored private var paletteVisible = false
     /// When auto join was last armed; a meeting already under way then is never joined.
-    private var armedAt = Date.distantFuture
+    @ObservationIgnored private var armedAt = Date.distantFuture
     /// Auto joined this launch, so a meeting opens itself at most once.
-    private var autoJoined: Set<MeetingEvent.ID> = []
+    @ObservationIgnored private var autoJoined: Set<MeetingEvent.ID> = []
+
+    /// Stored and written only on a flip: the menu-bar scene reads it, and must not re-run per tick.
+    private(set) var hasMenuBarEvent = false
 
     init(
         store: CalendarStore,
@@ -116,7 +120,10 @@ final class CalendarCoordinator {
             publishEntries()
             return
         }
-        store.onChange = { [weak self] in self?.publishEntries() }
+        store.onChange = { [weak self] in
+            self?.publishEntries()
+            self?.refreshMenuBarEvent()
+        }
         clock.onTick = { [weak self] in self?.minuteDidPass() }
         applySpan()
         store.start()
@@ -140,6 +147,7 @@ final class CalendarCoordinator {
             return
         }
         clock.start()
+        refreshMenuBarEvent()
     }
 
     /// Stamped when auto join goes on, so switching it on mid-call cannot yank you into that call.
@@ -155,7 +163,14 @@ final class CalendarCoordinator {
     private func minuteDidPass() {
         store.reloadIfStale(now: clock.now)
         publishEntries()
+        refreshMenuBarEvent()
         autoJoinIfDue()
+    }
+
+    private func refreshMenuBarEvent() {
+        let hasEvent = menuBarEvent != nil
+        guard hasEvent != hasMenuBarEvent else { return }
+        hasMenuBarEvent = hasEvent
     }
 
     private func autoJoinIfDue() {

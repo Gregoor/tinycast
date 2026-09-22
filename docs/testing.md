@@ -577,6 +577,9 @@ caches, TCC grants and login item, so this cannot disturb an installed copy.
 - On Meeting Title with Show Upcoming Events at 5 minutes, the title and countdown appear at T-5 and
   step on the minute boundary, not on a keystroke
 - `Only show events with meetings` hides a linkless event and shows it again when unchecked
+- `Hide when there are no upcoming events` removes the item whenever it would show only the glyph or
+  `No upcoming events`: on Today after the last event, on 5 minutes between meetings too. It returns
+  with the next event and never moves the `Calendar in Menu Bar` picker off its choice
 - Hide Current Event on Automatically clears the entry at the start and hands the space to the next
   event inside its lead time; on 5 minutes it lingers counting up, then clears
 - Clicking the calendar item opens `Join <title>`, `Open in Calendar...`, `My Schedule` and

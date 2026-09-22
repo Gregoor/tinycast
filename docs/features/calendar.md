@@ -196,6 +196,16 @@ which scopes Observation to the label instead of re-running either scene. It fal
 glyph when nothing is due, so the calendar item never disappears out from under the user. In **Meeting
 Title** mode, once no event remains today it instead reads `No upcoming events`.
 
+**Hide when there are no upcoming events** instead takes the item out whenever it would show the bare
+glyph or that placeholder — whenever `menuBarEvent` is nil — so it follows `Show Upcoming Events`,
+`Only show events with meetings` and `Hide Current Event` rather than adding a rule of its own: on
+*Today* it leaves after the day's last event, on a minutes lead it also leaves between meetings. The
+scene has to read that fact, so `CalendarCoordinator.hasMenuBarEvent` is **stored and written only
+when it flips** — a derived read would re-run `TinycastApp.body`, and the main menu with it, on every
+minute tick. SwiftUI writes
+`false` back through `isInserted` when it removes the item itself, so the insertion setter ignores a
+removal while the item is hidden for being empty: only a drag-out turns the display to `.disabled`.
+
 `CalendarMenuBarMenu` lists calendar actions only — `Join <title>` and `Open in Calendar...` for the
 displayed event, then `My Schedule` and `Calendar Settings...` — so the two menus never repeat each
 other. `Join` is absent for a linkless appointment rather than opening Calendar under a name that
