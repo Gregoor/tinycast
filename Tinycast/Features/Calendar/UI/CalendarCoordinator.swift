@@ -118,6 +118,7 @@ final class CalendarCoordinator {
             store.stop()
             clock.stop()
             publishEntries()
+            refreshMenuBarEvent()
             return
         }
         store.onChange = { [weak self] in
