@@ -412,14 +412,15 @@ so the sectioned view stays 1:1 with the flat selection.
 ### Suggestions
 
 `LauncherSuggestions.select` chooses at most five from every visible entry that is not a favorite, a
-meeting or Tinycast itself:
+meeting, an AI command or Tinycast itself. AI is the lowest priority, so Quick AI and AI Chat are
+never suggested, however often they are opened:
 
 1. up to two apps or extensions installed in the last five minutes and never opened —
    `AppEntry.installedAt` is the bundle's added-to-directory date;
 2. entries with a score above 1 and no bound shortcut, in empty-list order — a shortcut is already the
    faster way in;
 3. while fewer than five, built-in commands with no alias or shortcut, by
-   `CommandID.suggestionPriority`: AI Chat, Clipboard History, Search Files, My Schedule, Search Emoji &
+   `CommandID.suggestionPriority`: Clipboard History, Search Files, My Schedule, Search Emoji &
    Symbols, then Create Quicklink and Create Snippet. A command whose feature is off is absent from the
    index, so it is never offered.
 

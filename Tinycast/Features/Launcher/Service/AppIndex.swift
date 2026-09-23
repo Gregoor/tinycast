@@ -714,12 +714,13 @@ final class AppIndex {
         return ordered
     }
 
-    /// Meetings keep their own card, and Tinycast opening Tinycast goes nowhere.
+    /// Meetings keep their own card, AI is never pushed, and Tinycast opening Tinycast goes nowhere.
     private func suggestions(
         from entries: [AppEntry], usage: LauncherRankingStore.Snapshot, hotKeys: HotKeyManager
     ) -> [AppEntry] {
         let eligible = entries.filter {
-            $0.kind != .meeting && !($0.bundleID?.hasPrefix(Self.ownBundlePrefix) ?? false)
+            $0.kind != .meeting && $0.settingsOwner != .ai
+                && !($0.bundleID?.hasPrefix(Self.ownBundlePrefix) ?? false)
         }
         return LauncherSuggestions.select(from: eligible, now: usage.now) { entry in
             // `hotKeyAction` is nil for an extension command, whose shortcut is keyed by entry ID.

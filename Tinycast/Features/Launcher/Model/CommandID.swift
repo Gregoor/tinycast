@@ -166,7 +166,6 @@ enum CommandID: String, CaseIterable, Sendable {
     /// Suggested, highest first, until the user's own habits fill the section.
     var suggestionPriority: Int? {
         switch self {
-        case .quickAI: 90
         case .clipboardHistory: 80
         case .searchFiles: 70
         case .mySchedule: 60

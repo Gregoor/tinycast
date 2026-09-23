@@ -387,20 +387,20 @@ struct FuzzTest {
         }
 
         let commands = [
-            Candidate(name: "Clipboard History", priority: 80), Candidate(name: "AI Chat", priority: 90),
-            Candidate(name: "Search Files", priority: 70), Candidate(name: "My Schedule", priority: 60),
+            Candidate(name: "Search Files", priority: 70), Candidate(name: "Clipboard History", priority: 80),
+            Candidate(name: "My Schedule", priority: 60),
             Candidate(name: "Search Emoji & Symbols", priority: 50),
             Candidate(name: "Create Snippet", priority: 30)
         ]
         check(
             "a new user gets the built-ins, highest priority first",
             select(commands) == [
-                "AI Chat", "Clipboard History", "Search Files", "My Schedule", "Search Emoji & Symbols"
+                "Clipboard History", "Search Files", "My Schedule", "Search Emoji & Symbols", "Create Snippet"
             ])
         let used = [Candidate(name: "Safari", frecency: 40), Candidate(name: "Slack", frecency: 300)]
         check(
             "what the user opens comes first, most frecent first",
-            select(used + commands).prefix(3) == ["Slack", "Safari", "AI Chat"])
+            select(used + commands).prefix(3) == ["Slack", "Safari", "Clipboard History"])
         let many = (1...8).map { Candidate(name: "App \($0)", frecency: Double(100 + $0)) }
         check("never more than five", select(many + commands).count == LauncherSuggestions.limit)
         check(
@@ -408,7 +408,7 @@ struct FuzzTest {
             !select([Candidate(name: "Slack", frecency: 300, hotKey: true)] + commands).contains("Slack"))
         check(
             "the fill skips a built-in the user already aliased",
-            !select([Candidate(name: "AI Chat", alias: "ai", priority: 90)]).contains("AI Chat"))
+            select([Candidate(name: "Clipboard History", alias: "cb", priority: 80)]).isEmpty)
         let fresh = [
             Candidate(name: "New One", installedMinutesAgo: 1),
             Candidate(name: "New Two", installedMinutesAgo: 2),
