@@ -164,6 +164,12 @@ enum SettingsSearchCatalog {
             .generalCalculator, "Number format",
             keywords: ["decimal", "comma", "separator", "locale", "region", "thousands"]),
         .init(
+            .generalSearch, "Show suggestions",
+            keywords: ["frequent", "recent", "recommended", "empty", "root search"]),
+        .init(
+            .generalSearch, "Search sensitivity",
+            keywords: ["fuzzy", "strict", "loose", "matching", "typo", "root search"]),
+        .init(
             .generalSearch, "Learned ranking",
             keywords: ["reset", "history", "order", "privacy"])
     ]

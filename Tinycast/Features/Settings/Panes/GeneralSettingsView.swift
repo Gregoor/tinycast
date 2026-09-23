@@ -160,6 +160,18 @@ struct GeneralSettingsView: View {
             }
 
             Section {
+                Toggle(isOn: $settings.launcherShowsSuggestions) {
+                    SettingsRowTitle(.generalSearch, "Show suggestions")
+                    Text("What you open most, while the search field is empty.")
+                }
+                Picker(selection: $settings.rootSearchSensitivity) {
+                    ForEach(SearchSensitivity.allCases) { sensitivity in
+                        Text(sensitivity.title).tag(sensitivity)
+                    }
+                } label: {
+                    SettingsRowTitle(.generalSearch, "Search sensitivity")
+                    Text("Lower finds names from scattered letters.")
+                }
                 LabeledContent {
                     Button("Reset…", role: .destructive) {
                         confirmingRankingReset = true

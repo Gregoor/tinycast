@@ -59,7 +59,7 @@ enum SettingsPaneScanner {
                     id: url.path, name: nameOverrides[bundleID] ?? names.first ?? base, url: url,
                     bundleID: bundleID, kind: .systemSettings,
                     // `EntryNaming` drops whatever repeats the name, so the whole list can go in.
-                    alternateNames: names, iconOverride: iconOverrides[bundleID]))
+                    alternateTitles: names, iconOverride: iconOverrides[bundleID]))
         }
         let panes = result.sorted {
             $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending

@@ -124,6 +124,19 @@ final class AppSettings {
         didSet { defaults.set(searchScopes, forKey: Key.searchScopes.rawValue) }
     }
 
+    var launcherShowsSuggestions: Bool {
+        didSet {
+            defaults.set(launcherShowsSuggestions, forKey: Key.launcherShowsSuggestions.rawValue)
+        }
+    }
+
+    /// How loose a fuzzy root-search hit may be and still show.
+    var rootSearchSensitivity: SearchSensitivity {
+        didSet {
+            defaults.set(rootSearchSensitivity.rawValue, forKey: Key.rootSearchSensitivity.rawValue)
+        }
+    }
+
     /// Ships on, unlike every other feature switch: a launcher is expected to keep history.
     var clipboardEnabled: Bool {
         didSet { defaults.set(clipboardEnabled, forKey: Key.clipboardEnabled.rawValue) }
@@ -586,6 +599,13 @@ final class AppSettings {
         // Unset seeds the defaults; a stored empty array is a deliberately cleared list.
         searchScopes =
             defaults.stringArray(forKey: Key.searchScopes.rawValue) ?? SearchScopes.defaults
+        launcherShowsSuggestions =
+            defaults.object(forKey: Key.launcherShowsSuggestions.rawValue) == nil
+            || defaults.bool(forKey: Key.launcherShowsSuggestions.rawValue)
+        // High by default: it keeps letter soup out of the results.
+        rootSearchSensitivity =
+            defaults.string(forKey: Key.rootSearchSensitivity.rawValue)
+            .flatMap(SearchSensitivity.init) ?? .high
         openOnCursorScreen =
             defaults.object(forKey: Key.openOnCursorScreen.rawValue) == nil
             || defaults.bool(forKey: Key.openOnCursorScreen.rawValue)

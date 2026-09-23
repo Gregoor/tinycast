@@ -206,8 +206,8 @@ final class CalendarCoordinator {
                     + (meeting.id.addingPercentEncoding(withAllowedCharacters: .alphanumerics)
                         ?? ""))!,
             bundleID: nil, kind: .meeting,
-            matchAliases: [meeting.calendarName],
-            symbolName: meeting.link?.provider.sfSymbol ?? "calendar")
+            symbolName: meeting.link?.provider.sfSymbol ?? "calendar",
+            keywords: [meeting.calendarName])
     }
 
     // MARK: - Palette lifecycle

@@ -14,8 +14,9 @@ Independently of the folder tree, every mature subsystem has converged on the sa
 │ environment fact is an injected parameter.                                 │
 │ ⇒ Compiled verbatim by a harness, so it cannot drift.                      │
 │                                                                            │
-│ SearchRelevance · EntryNaming · ScriptRomanization · LauncherOrder ·       │
-│ SearchScopes · LauncherRankingStore · FileSearch{Query,Result,Scope} ·      │
+│ SearchRelevance · LauncherMatch · EntryNaming · ScriptRomanization ·       │
+│ LauncherOrder · LauncherSuggestions · LauncherRankingStore · SearchScopes · │
+│ FileSearch{Query,Result,Scope} ·                                           │
 │ Calculator/* · EmojiCatalog · EmojiGridGeometry · SystemAction ·            │
 │ VolumeLevel ·                                                              │
 │ WindowCommand · WindowPlacementEngine · WindowActionMemory · WindowLayout/* ·      │
@@ -34,7 +35,7 @@ Independently of the folder tree, every mature subsystem has converged on the sa
                                    │ consumed by
 ┌─ EFFECT ─────────────────────────▼─────────────────────────────────────────┐
 │ All platform I/O, one folder per feature.                                  │
-│ AppIndex · SpotlightNames · FileSearchService · SettingsPaneScanner ·      │
+│ AppIndex · FileSearchService · SettingsPaneScanner ·                       │
 │ AXWindowAccess · AXScreens · WindowInventory · WindowLayoutRunner ·        │
 │ IconCache · WindowMover · UninstallScanner · UninstallRunner ·             │
 │ SystemActionRunner · QuicklinkLauncher · TextInjector ·             │

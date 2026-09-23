@@ -65,11 +65,10 @@ final class LauncherCoordinator {
     func launch(
         _ app: AppEntry, searchQuery: String? = nil, arguments: [String: String] = [:]
     ) {
-        // A category listing is no search: learning it would rank the row under "s".
-        if let searchQuery, AppEntry.Kind.named(by: searchQuery) == nil,
-            !CommandCatalog.isQueryDriven(app)
-        {
-            ranking.record(itemKey: app.preferenceKey, query: searchQuery)
+        // A category word is no search for the row: learning it would rank the row under "s".
+        if !CommandCatalog.isQueryDriven(app) {
+            let term = searchQuery.flatMap { AppEntry.Kind.named(by: $0) == nil ? $0 : nil }
+            ranking.visit(itemKey: app.preferenceKey, query: term)
         }
         // Commands dispatch before the palette hides: mode-switching commands keep it open.
         if app.kind == .command {
