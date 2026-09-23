@@ -52,7 +52,8 @@ struct UpcomingWindow: Sendable {
 
     static func dayLabel(_ date: Date, calendar: Calendar) -> String {
         let style = Date.FormatStyle(
-            locale: calendar.locale ?? .current, calendar: calendar, timeZone: calendar.timeZone)
+            locale: calendar.locale ?? Locale(identifier: "en_US"), calendar: calendar,
+            timeZone: calendar.timeZone)
         return date.formatted(style.weekday(.abbreviated).month(.abbreviated).day())
     }
 
