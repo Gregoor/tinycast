@@ -332,6 +332,10 @@ final class AppCore {
             extensions.onDidUninstall = { [weak self] entryIDs in
                 self?.extensionCoordinator.removeExtensionReferences(entryIDs: entryIDs)
             }
+            appIndex.onScan = { [weak self] in
+                guard let self else { return }
+                hotKeys.removeAppBindings(where: appIndex.isUninstalled)
+            }
             hotKeys.displayName = { [weak self] action in self?.hotKeyDisplayName(for: action) }
             hotKeys.allowsAction = { [weak self] action in
                 guard let self, visibility.allowsHotKey(action) else { return false }

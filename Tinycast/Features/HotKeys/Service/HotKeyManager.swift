@@ -114,6 +114,15 @@ final class HotKeyManager {
     /// Pruned by `AppleShortcutCoordinator` after a successful read, never here at launch.
     var boundAppleShortcutIDs: [UUID] { boundIDs(key: boundAppleShortcutKey) }
 
+    /// A deleted app takes its Settings row with it, so nothing else could ever clear its binding.
+    func removeAppBindings(where isUninstalled: (String) -> Bool) {
+        for bundleID in boundBundleIDs where isUninstalled(bundleID) {
+            let action = HotKeyAction.app(bundleID: bundleID)
+            if recordingAction == action { recordingAction = nil }
+            setBinding(nil, for: action)
+        }
+    }
+
     func binding(for action: HotKeyAction) -> HotKeyBinding? { bindings[action] }
 
     private func storedBinding(for action: HotKeyAction) -> HotKeyBinding? {

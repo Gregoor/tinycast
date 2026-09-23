@@ -43,8 +43,13 @@ the keycap rendering — only the _engine_ differs.
 
 Bindings persist as JSON strings under `hotkey.<action>` UserDefaults keys, computed in one place —
 `HotKeyAction.defaultsKey`, which doubles as the `HotKeyCenter` registration id. The set of bound
-bundle IDs lives in `boundAppBundleIDs` and is re-registered on launch. System Settings panes use
-`boundPaneBundleIDs`; custom commands, quicklinks, window layouts and custom window sizes use their
+bundle IDs lives in `boundAppBundleIDs` and is re-registered on launch. After every `AppIndex` scan,
+`HotKeyManager.removeAppBindings` clears the binding of an app that is gone from both the index and
+LaunchServices: its Settings row went with it, so nothing else could clear the chord. Requiring both
+keeps a dropped search scope from deleting a working shortcut, and running on unchanged scans too
+covers LaunchServices still resolving an app for a few seconds after it is trashed.
+
+System Settings panes use `boundPaneBundleIDs`; custom commands, quicklinks, window layouts and custom window sizes use their
 stable UUIDs in `boundCustomCommandIDs`, `boundQuicklinkIDs`, `boundWindowLayoutIDs` and
 `boundCustomWindowSizeIDs`. Those four are the per-item case — unlike a fixed catalog, there is no `allCases` to walk — so each needs an index for `start()`
 to re-register from

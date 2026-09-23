@@ -365,6 +365,8 @@ final class AppIndex {
     private let ranking: LauncherRankingStore
     private let aliases: AliasStore
     private var settings: AppSettings?
+    /// Fired after every scan, even an unchanged one: LaunchServices can trail a deletion by seconds.
+    @ObservationIgnored var onScan: (() -> Void)?
 
     init(ranking: LauncherRankingStore, aliases: AliasStore) {
         self.ranking = ranking
@@ -544,6 +546,13 @@ final class AppIndex {
             discoveredEntries = found
             publishEntries()
         } while refreshPending
+        onScan?()
+    }
+
+    /// Out of the index *and* unknown to LaunchServices, so dropping a search scope isn't a delete.
+    func isUninstalled(bundleID: String) -> Bool {
+        !discoveredEntries.contains { $0.kind == .application && $0.bundleID == bundleID }
+            && NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) == nil
     }
 
     nonisolated private static func scan(
