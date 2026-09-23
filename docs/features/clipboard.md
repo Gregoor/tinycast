@@ -6,11 +6,17 @@
   has to outrank a stored `false` in `AppSettings.init`, and off means fully off: the poller stops,
   the SQLite file closes, the launcher command and its shortcut go, and Tab skips the screen.
   `ClipboardCoordinator.applyEnabled()` is the single place that applies it.
-- **↵ and ⌘↵ are one swapped pair, and `ClipboardCoordinator.activate(_:inverted:)` is the only
-  place that reads which way round they sit.** `clipboardDefaultAction` names what ↵ does — paste
-  (the default) or copy — and ⌘↵ always does the other. ⌘1…⌘0 on a pin and a double-click go
+- **↵, ⌘↵ and ⌃⌘↵ trade places around one setting, and
+  `ClipboardDefaultAction.action(for:on:)` is the only place that says which chord runs what.**
+  Paste owns ↵, Copy ⌘↵ and Paste as Plain Text ⌃⌘↵; `clipboardDefaultAction` moves one to ↵ and
+  Paste takes the chord it left, so a Copy default keeps the ↵/⌘↵ swap it always had.
+  `ClipboardCoordinator.activate(_:chord:)` runs it, and ⌘1…⌘0 on a pin and a double-click go
   through the same call, so no surface can drift from the setting; ⌥↵ pastes regardless, since
-  keeping the window open is a paste-only idea. The ⌘K menu puts the default first with the ↵ chip.
+  keeping the window open is a paste-only idea. The ⌘K menu lists the three in chord order, which
+  puts the default first with the ↵ chip.
+- **Paste as Plain Text writes `ClipboardItem.plainText` and nothing else**: the text itself, or a
+  file entry's path without its `public.file-url`. An image has none, so it gets no plain row, a
+  plain-text default pastes it as it is, and ⌃⌘↵ on it falls back to ⌘↵ as on every other screen.
 - **Clipboard writes stamp a private `internalType` marker** so the poller skips Tinycast's own writes.
   If the writer and the poller ever disagree, the app re-captures its own pastes in a loop.
 - **`Model/ClipboardStore.swift` keeps to Foundation plus SQLite3 and no other app source**, so

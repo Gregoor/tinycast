@@ -157,7 +157,7 @@ final class AppSettings {
         didSet { defaults.set(clipboardDisabledApps, forKey: Key.clipboardDisabledApps.rawValue) }
     }
 
-    /// What ↵ does on a clipboard entry; ⌘↵ always does the other one.
+    /// What ↵ does on a clipboard entry; Paste takes the chord the chosen action leaves free.
     var clipboardDefaultAction: ClipboardDefaultAction {
         didSet {
             defaults.set(

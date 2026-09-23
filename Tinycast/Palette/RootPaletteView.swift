@@ -518,6 +518,9 @@ struct RootPaletteView: View {
                     return .handled
                 }
                 let selection = selection(in: screen)
+                if command, press.modifiers.contains(.control), screen.tertiary(at: selection) {
+                    return .handled
+                }
                 if command { return screen.secondary(at: selection) ? .handled : .ignored }
                 return screen.pasteKeepingWindowOpen(at: selection) ? .handled : .ignored
             }
@@ -1108,6 +1111,7 @@ struct RootPaletteView: View {
         case .some(.carriageReturn), .some(.enter):
             let screen = screen
             let selection = selection(in: screen)
+            if modifiers.contains([.command, .control]), screen.tertiary(at: selection) { return true }
             if modifiers.contains(.command) { return screen.secondary(at: selection) }
             if modifiers.contains(.option) {
                 return screen.pasteKeepingWindowOpen(at: selection)

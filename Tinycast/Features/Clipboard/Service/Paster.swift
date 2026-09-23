@@ -24,6 +24,17 @@ enum Paster {
         return true
     }
 
+    /// Paste only the item's text, so a file arrives as its path and the receiver's style applies.
+    @MainActor @discardableResult
+    static func pastePlainText(
+        _ item: ClipboardItem, store: ClipboardStore, previousApp: NSRunningApplication?
+    ) -> Bool {
+        guard let text = item.plainText else { return false }
+        pasteString(text, previousApp: previousApp)
+        store.promote(item)
+        return true
+    }
+
     /// Put the item on the pasteboard without pasting; the marker stops re-capture.
     @MainActor @discardableResult
     static func copy(_ item: ClipboardItem, store: ClipboardStore) -> Bool {

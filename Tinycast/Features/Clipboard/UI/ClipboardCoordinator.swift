@@ -68,12 +68,21 @@ final class ClipboardCoordinator {
         clipboardStore.enforceLimits()
     }
 
-    /// ↵ runs the configured default; ⌘↵ the other one, so the two chords stay a swapped pair.
-    func activate(_ item: ClipboardItem, inverted: Bool = false) {
-        if (settings.clipboardDefaultAction == .copy) != inverted {
-            copyToClipboard(item)
-        } else {
-            paste(item)
+    /// ↵ runs the configured default and the other chords follow it; false when `chord` has none.
+    @discardableResult
+    func activate(_ item: ClipboardItem, chord: ClipboardChord = .return) -> Bool {
+        guard let action = settings.clipboardDefaultAction.action(for: chord, on: item) else {
+            return false
+        }
+        perform(action, on: item)
+        return true
+    }
+
+    func perform(_ action: ClipboardDefaultAction, on item: ClipboardItem) {
+        switch action {
+        case .paste: paste(item)
+        case .copy: copyToClipboard(item)
+        case .pastePlainText: pasteAsPlainText(item)
         }
     }
 
@@ -85,6 +94,15 @@ final class ClipboardCoordinator {
             selectClip(item)
         } else {
             reportUnavailable(item)
+        }
+    }
+
+    /// A file's path stays valid text after the file goes, so this never reports it missing.
+    func pasteAsPlainText(_ item: ClipboardItem) {
+        let previous = windowController.previousApp
+        paletteCoordinator.hidePalette(restoreFocus: false)
+        if Paster.pastePlainText(item, store: clipboardStore, previousApp: previous) {
+            selectClip(item)
         }
     }
 
