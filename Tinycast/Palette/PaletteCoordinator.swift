@@ -12,6 +12,8 @@ final class PaletteCoordinator {
     private let windowController: PaletteWindowController
     /// Features whose launcher rows are read from outside Tinycast re-read them on each open.
     var onLauncherShown: (() -> Void)?
+    /// Screens that snapshot other apps re-read them on every open, a restored one included.
+    var onScreenOpening: ((PaletteMode) -> Void)?
 
     init(
         palette: PaletteState,
@@ -88,6 +90,8 @@ final class PaletteCoordinator {
             navigate(to: mode)
         }
         if let query { palette.query = query }
+        // Before the show: `targetApp` must still name the app in front, and no row may pop in.
+        onScreenOpening?(palette.mode)
         windowController.show()
         if palette.mode == .fileSearch { fileSearch.search(palette.query) }
         if palette.mode == .menuSearch { menuSearch.filter(palette.query) }

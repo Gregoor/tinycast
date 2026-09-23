@@ -17,7 +17,9 @@ launcher and a still-recorded shortcut for either does nothing.
   revision counter to keep superseded sweeps from publishing. `WindowInventory` made the same call.
 - **A live `AXUIElement` never leaves the main actor, and never outlives the show.** The pure entry
   carries a `handle`; `WindowSwitchSession` holds the `handle → Element` table `@ObservationIgnored`
-  and drops it in `reset()`, which `hidePalette` and every mode change call.
+  and drops it in `reset()`, which `hidePalette` and every mode change call. So every open sweeps
+  anew — `WindowSwitchCoordinator.load()`, through `PaletteCoordinator.onScreenOpening` — and a
+  screen restored inside the Pop to Root window lists today's windows, not an empty snapshot.
 - **Nothing in `Model/` knows what a window is.** `WindowSwitchEntry` takes `appRank` as a number
   someone else measured, so `WindowSwitchOrder` and `WindowSwitchQuery` stay Foundation-only and the
   harness compiles the shipped sources.

@@ -39,6 +39,11 @@ final class MenuSearchCoordinator {
             Task { await self.reportPermissionFailure() }
             return
         }
+        paletteCoordinator.togglePalette(mode: .menuSearch)
+    }
+
+    /// Every open walks anew, a restore included: hiding dropped the last snapshot.
+    func load() {
         let app = paletteCoordinator.targetApp
         frozenApp = app
         if let url = app?.bundleURL {
@@ -66,7 +71,6 @@ final class MenuSearchCoordinator {
         case .excluded, .selfTarget, .menuLess, .noApplication:
             session.present(target: target, snapshot: [])
         }
-        paletteCoordinator.togglePalette(mode: .menuSearch)
     }
 
     func activate(_ item: MenuSearchItem) {

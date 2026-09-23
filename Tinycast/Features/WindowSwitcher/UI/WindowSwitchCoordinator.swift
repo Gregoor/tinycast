@@ -34,8 +34,12 @@ final class WindowSwitchCoordinator {
             Task { await self.reportPermissionFailure() }
             return
         }
-        session.present(WindowSwitchSweep.snapshot(ranks: WindowZOrder.appRanks()))
         paletteCoordinator.togglePalette(mode: .switchWindows)
+    }
+
+    /// Every open sweeps anew, a restore included: hiding dropped the last snapshot.
+    func load() {
+        session.present(WindowSwitchSweep.snapshot(ranks: WindowZOrder.appRanks()))
     }
 
     func activate(_ entry: WindowSwitchEntry) {
