@@ -34,7 +34,10 @@ struct FileSearchSurface: View {
     private func sniff() async {
         guard FileSearchPreviewKind(pathExtension: url.pathExtension) == nil else { return }
         let url = url
-        sniffed = await Task.detached(priority: .userInitiated) { Self.readHead(of: url) }.value
+        let read = await Task.detached(priority: .userInitiated) { Self.readHead(of: url) }.value
+        // Cancelling the selection does not stop the read, so a late one must not land on the next.
+        guard !Task.isCancelled else { return }
+        sniffed = read
     }
 
     private nonisolated static func readHead(of url: URL) -> Sniffed {

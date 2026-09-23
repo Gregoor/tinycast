@@ -327,5 +327,8 @@ struct FileSearchTests {
         let cut = Data("café".utf8).dropLast()
         expect(FileSearchPreviewKind.isText(cut, isWholeFile: false), "a read may cut a character")
         expect(!FileSearchPreviewKind.isText(cut, isWholeFile: true), "a whole file must be UTF-8")
+        expect(
+            !FileSearchPreviewKind.isText(Data("abc".utf8) + [0xFF], isWholeFile: false),
+            "a read forgives a cut character, not a malformed byte")
     }
 }

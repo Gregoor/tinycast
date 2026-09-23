@@ -37,7 +37,21 @@ enum FileSearchPreviewKind: Equatable, Sendable {
     /// No NUL and valid UTF-8, forgiving the one character a partial read may have cut in half.
     static func isText(_ bytes: Data, isWholeFile: Bool) -> Bool {
         guard !bytes.contains(0) else { return false }
-        let cut = isWholeFile ? 0 : min(3, bytes.count)
-        return (0...cut).contains { String(validating: bytes.dropLast($0), as: UTF8.self) != nil }
+        let checked = isWholeFile ? bytes : bytes.dropLast(cutCharacterLength(bytes))
+        return String(validating: checked, as: UTF8.self) != nil
+    }
+
+    /// The bytes of a trailing multi-byte character that is missing its continuation bytes.
+    private static func cutCharacterLength(_ bytes: Data) -> Int {
+        guard let lead = bytes.suffix(3).lastIndex(where: { $0 & 0xC0 != 0x80 }) else { return 0 }
+        let length =
+            switch bytes[lead] {
+            case 0xC2...0xDF: 2
+            case 0xE0...0xEF: 3
+            case 0xF0...0xF4: 4
+            default: 1
+            }
+        let present = bytes.endIndex - lead
+        return present < length ? present : 0
     }
 }
