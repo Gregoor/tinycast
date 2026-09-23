@@ -44,6 +44,10 @@ final class MenuSearchCoordinator {
 
     /// Every open walks anew, a restore included: hiding dropped the last snapshot.
     func load() {
+        guard Permissions.ensureAccessibility() else {
+            Task { await self.reportPermissionFailure() }
+            return
+        }
         let app = paletteCoordinator.targetApp
         frozenApp = app
         if let url = app?.bundleURL {

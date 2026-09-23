@@ -43,8 +43,9 @@ ranking runs in memory over it, and activating a row re-resolves the live elemen
   bumps `revision`, and a landing walk that does not match it is discarded.
 - **The walk runs off-main, and holds no actor state.** `AXMenuAccess` is a pure `enum` of static
   functions driven by `Task.detached` from `MenuSearchSession`. There is no second actor.
-- **Accessibility is gated twice.** `Permissions.ensureAccessibility()` runs on show *and* on
+- **Accessibility is gated twice.** `Permissions.ensureAccessibility()` runs on open *and* on
   activate — a grant revoked while the palette is open must not reach `AXUIElementPerformAction`.
+  The open gate sits in both `show()` and `load()`, because a restore reaches `load()` alone.
 - **An excluded app is refused, never filtered.** `MenuSearchTarget.classify` answers `.excluded`
   from `AppSettings.menuSearchDisabledApps`, before the menu-bar test so an excluded accessory app
   does not read as menu-less, and `load()` starts no walk at all. Filtering a walked snapshot would

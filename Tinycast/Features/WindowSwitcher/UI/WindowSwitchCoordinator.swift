@@ -39,6 +39,10 @@ final class WindowSwitchCoordinator {
 
     /// Every open sweeps anew, a restore included: hiding dropped the last snapshot.
     func load() {
+        guard Permissions.ensureAccessibility() else {
+            Task { await self.reportPermissionFailure() }
+            return
+        }
         session.present(WindowSwitchSweep.snapshot(ranks: WindowZOrder.appRanks()))
     }
 
