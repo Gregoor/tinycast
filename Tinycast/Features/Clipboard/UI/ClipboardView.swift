@@ -239,31 +239,32 @@ private struct ClipboardRow: View {
     }
 }
 
-/// A downsampled thumbnail, decoding misses off the main thread.
-private struct AsyncThumbnail<Content: View, Placeholder: View>: View {
-    /// ImageIO for a blob we hold; QuickLook for a referenced file, which may be any type.
-    enum Source {
-        case image
-        case file
+/// ImageIO for a blob we hold; QuickLook for a referenced file, which may be any type.
+private enum ThumbnailSource {
+    case image
+    case file
 
-        func cached(_ url: URL, maxPixel: CGFloat) -> NSImage? {
-            switch self {
-            case .image: return ImageThumbnail.cached(url, maxPixel: maxPixel)
-            case .file: return FilePreviewThumbnail.cached(url, maxPixel: maxPixel)
-            }
-        }
-
-        func loadAsync(_ url: URL, maxPixel: CGFloat) async -> NSImage? {
-            switch self {
-            case .image: return await ImageThumbnail.loadAsync(url, maxPixel: maxPixel)
-            case .file: return await FilePreviewThumbnail.loadAsync(url, maxPixel: maxPixel)
-            }
+    func cached(_ url: URL, maxPixel: CGFloat) -> NSImage? {
+        switch self {
+        case .image: return ImageThumbnail.cached(url, maxPixel: maxPixel)
+        case .file: return FilePreviewThumbnail.cached(url, maxPixel: maxPixel)
         }
     }
 
+    func loadAsync(_ url: URL, maxPixel: CGFloat) async -> NSImage? {
+        switch self {
+        case .image: return await ImageThumbnail.loadAsync(url, maxPixel: maxPixel)
+        case .file: return await FilePreviewThumbnail.loadAsync(url, maxPixel: maxPixel)
+        }
+    }
+}
+
+/// A downsampled thumbnail, decoding misses off the main thread.
+private struct AsyncThumbnail<Content: View, Placeholder: View>: View {
     let url: URL?
     let maxPixel: CGFloat
-    var source: Source = .image
+    /// Not nested here: the off-main decode would carry this view's isolated `View` conformances.
+    var source: ThumbnailSource = .image
     @ViewBuilder let content: (Image) -> Content
     @ViewBuilder let placeholder: () -> Placeholder
 
