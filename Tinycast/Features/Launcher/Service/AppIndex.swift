@@ -329,6 +329,8 @@ final class AppIndex {
         let favoritesRevision: Int
         let hotKeysRevision: Int
         let showsSuggestions: Bool
+        /// Suggestions and usage order age with the clock, which no revision tracks.
+        let minute: Int
     }
 
     /// Repeated renders for the same query reuse the ranking instead of re-matching every frame.
@@ -660,16 +662,16 @@ final class AppIndex {
     ) -> Results {
         let q = query.trimmingCharacters(in: .whitespaces)
         let showsSuggestions = settings?.launcherShowsSuggestions ?? true
+        let usage = ranking.snapshot()
         let key = ResultsKey(
             match: matchKey(q), visibilityRevision: visibility.revision,
             favoritesRevision: favorites.revision, hotKeysRevision: hotKeys.revision,
-            showsSuggestions: showsSuggestions)
+            showsSuggestions: showsSuggestions, minute: Int(usage.now.timeIntervalSince1970 / 60))
         return resultsMemo.value(for: key) {
             // Filtering stays downstream of `matches` so that memo is never keyed on hidden state.
             let visible = matches(q).filter(visibility.isVisible)
             guard q.isEmpty else { return Results(entries: visible) }
             let split = favorites.ordered(visible)
-            let usage = ranking.snapshot()
             let suggested =
                 showsSuggestions ? suggestions(from: split.rest, usage: usage, hotKeys: hotKeys) : []
             let shown = Set(suggested.map(\.id))
@@ -720,9 +722,12 @@ final class AppIndex {
             $0.kind != .meeting && !($0.bundleID?.hasPrefix(Self.ownBundlePrefix) ?? false)
         }
         return LauncherSuggestions.select(from: eligible, now: usage.now) { entry in
-            LauncherSuggestions.Traits(
+            // `hotKeyAction` is nil for an extension command, whose shortcut is keyed by entry ID.
+            let action: HotKeyAction? =
+                entry.kind == .extensionCommand ? .extensionCommand(entryID: entry.id) : entry.hotKeyAction
+            return LauncherSuggestions.Traits(
                 signals: signals(for: entry, usage: usage), installedAt: entry.installedAt,
-                hasHotKey: entry.hotKeyAction.flatMap(hotKeys.binding(for:)) != nil,
+                hasHotKey: action.flatMap(hotKeys.binding(for:)) != nil,
                 priority: CommandCatalog.command(for: entry)?.suggestionPriority)
         }
     }

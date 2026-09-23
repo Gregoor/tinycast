@@ -92,8 +92,8 @@ sensitivity. Bundle identifiers and executable names are not matched.
 | --- | ---: |
 | the query's first, on the text's first | 4 |
 | on a word start — just after a separator | 3 |
-| anywhere else | 2 |
-| a separator on a separator | 1 |
+| anywhere else, a separator on the same separator included | 2 |
+| a separator on a different one, like a space on `-` | 1 |
 | not adjacent to the previous match | −1 |
 
 Separators are space, tab, newline and `- . / ( ) [ ]`; camelCase is not a boundary. A query separator
@@ -132,9 +132,10 @@ The first rule that separates two entries decides:
 12. Kind priority.
 13. The name, compared numerically.
 
-Where both entries qualify for rule 3, 4 or 5, frecency and then the tiebreak decide between them. The
-tiebreak — what the empty list sorts by too — is frecency, then having an alias, then kind priority,
-then the name. Rule 5 applies at any length, which is why `zed` lists the Zed extension's commands above
+Two entries that both meet rule 3 go by search-term strength, then frecency; both meeting rule 4 go by
+frecency; both meeting rule 5 go by frecency, then the title's own score. The tiebreak settles the rest —
+what the empty list sorts by too — and is frecency, then having an alias, then kind priority, then the
+name. Rule 5 applies at any length, which is why `zed` lists the Zed extension's commands above
 the Zed app: rule 3 only protects an exact title past three characters.
 
 ### Kind priority and boosts
@@ -218,8 +219,8 @@ rather than being dropped whole.
 
 An extension's title is the subtitle of every command it ships; a command's own manifest subtitle takes
 its place, and the title then rides as a keyword. A subtitle ranks like a title in rule 9, and an exact
-one is rule 5: `brew` lists Brew's commands, in usage and then name order, above any title that merely
-starts with it. The subtitle does not name the entry, so a title scoring the same wins rule 11.
+one is rule 5: `brew` lists Brew's commands above any title that merely starts with it, by usage, then
+by the title's own score, then by name. The subtitle does not name the entry, so a title scoring the same wins rule 11.
 
 ### Category search
 

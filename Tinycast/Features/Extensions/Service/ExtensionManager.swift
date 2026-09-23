@@ -159,19 +159,13 @@ final class ExtensionManager: ExtensionRuntimeDelegate, ExtensionHostContext {
         }
         let entries =
             installed
-            .flatMap { owner -> [AppEntry] in
-                let installedAt = try? owner.directory
-                    .resourceValues(forKeys: [.addedToDirectoryDateKey]).addedToDirectoryDate
-                return owner.manifest.commands.map { entry(for: $0, in: owner, installedAt: installedAt) }
-            }
+            .flatMap { owner in owner.manifest.commands.map { entry(for: $0, in: owner) } }
             .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
         appIndex?.setExtensionCommands(entries)
     }
 
     /// One command as a row; a chosen appearance replaces the shipped icon for all of them.
-    private func entry(
-        for command: ExtensionCommand, in owner: InstalledExtension, installedAt: Date? = nil
-    ) -> AppEntry {
+    private func entry(for command: ExtensionCommand, in owner: InstalledExtension) -> AppEntry {
         let appearance = appearances.appearance(for: owner.manifest.name)
         let reference = ExtensionCommandRef(
             extensionName: owner.manifest.name, commandName: command.name)
@@ -193,7 +187,7 @@ final class ExtensionManager: ExtensionRuntimeDelegate, ExtensionHostContext {
                 lastError: metadata.lastError),
             keywords: command.keywords,
             iconOverride: icon(for: command, in: owner, appearance: appearance),
-            ownerName: owner.title, installedAt: installedAt)
+            ownerName: owner.title, installedAt: owner.installedAt)
     }
 
     /// Persist and re-publish, so rows change under the user rather than on the next scan.

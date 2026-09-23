@@ -4,6 +4,8 @@ import Foundation
 struct InstalledExtension: Sendable, Hashable, Identifiable {
     let manifest: ExtensionManifest
     let directory: URL
+    /// Read by `scan`, off the main actor, so publishing launcher rows never touches the disk.
+    var installedAt: Date?
 
     var id: String { manifest.name }
     var title: String { manifest.title }
@@ -113,7 +115,7 @@ enum ExtensionCatalog {
         let root = extensionsDirectory()
         let entries =
             (try? FileManager.default.contentsOfDirectory(
-                at: root, includingPropertiesForKeys: [.isDirectoryKey],
+                at: root, includingPropertiesForKeys: [.isDirectoryKey, .addedToDirectoryDateKey],
                 options: [.skipsHiddenFiles])) ?? []
         return
             entries
@@ -122,7 +124,9 @@ enum ExtensionCatalog {
                 guard let manifest = try? ExtensionManifest.load(directory: directory),
                     manifest.supportsMacOS
                 else { return nil }
-                return InstalledExtension(manifest: manifest, directory: directory)
+                let added = try? directory.resourceValues(forKeys: [.addedToDirectoryDateKey])
+                return InstalledExtension(
+                    manifest: manifest, directory: directory, installedAt: added?.addedToDirectoryDate)
             }
             .sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
     }
