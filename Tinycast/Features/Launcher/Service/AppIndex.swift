@@ -22,69 +22,69 @@ struct AppEntry: Identifiable, Hashable, Sendable {
                 return KindDescriptor(
                     label: "Application", sectionTitle: "Applications",
                     openVerb: "Open Application", canHideFromSearch: true,
-                    canRevealInFinder: true, isSymbolIcon: false)
+                    canRevealInFinder: true, canDragOut: true, isSymbolIcon: false)
             case .systemSettings:
                 return KindDescriptor(
                     label: "System Setting", sectionTitle: "System Settings",
                     openVerb: "Open System Setting", canHideFromSearch: true,
-                    canRevealInFinder: true, isSymbolIcon: false)
+                    canRevealInFinder: true, canDragOut: false, isSymbolIcon: false)
             case .command:
                 return KindDescriptor(
                     label: "Command", sectionTitle: "Commands",
                     openVerb: "Run Command", canHideFromSearch: true,
-                    canRevealInFinder: false, isSymbolIcon: true)
+                    canRevealInFinder: false, canDragOut: false, isSymbolIcon: true)
             case .quickAction:
                 return KindDescriptor(
                     label: "Quick Action", sectionTitle: "Quick Actions",
                     openVerb: "Run Quick Action", canHideFromSearch: true,
-                    canRevealInFinder: false, isSymbolIcon: true)
+                    canRevealInFinder: false, canDragOut: false, isSymbolIcon: true)
             case .customCommand:
                 return KindDescriptor(
                     label: "Custom Command", sectionTitle: "Custom Commands",
                     openVerb: "Run Custom Command", canHideFromSearch: false,
-                    canRevealInFinder: false, isSymbolIcon: true)
+                    canRevealInFinder: false, canDragOut: false, isSymbolIcon: true)
             case .snippet:
                 return KindDescriptor(
                     label: "Snippet", sectionTitle: "Snippets",
                     openVerb: "Paste Snippet", canHideFromSearch: false,
-                    canRevealInFinder: true, isSymbolIcon: true)
+                    canRevealInFinder: true, canDragOut: false, isSymbolIcon: true)
             case .systemAction:
                 return KindDescriptor(
                     label: "System Action", sectionTitle: "System Actions",
                     openVerb: "Run System Action", canHideFromSearch: true,
-                    canRevealInFinder: false, isSymbolIcon: true)
+                    canRevealInFinder: false, canDragOut: false, isSymbolIcon: true)
             case .windowCommand:
                 return KindDescriptor(
                     label: "Window Command", sectionTitle: "Window Management",
                     openVerb: "Move Window", canHideFromSearch: true,
-                    canRevealInFinder: false, isSymbolIcon: true)
+                    canRevealInFinder: false, canDragOut: false, isSymbolIcon: true)
             case .windowLayout:
                 return KindDescriptor(
                     label: "Window Layout", sectionTitle: "Window Layouts",
                     openVerb: "Arrange Windows", canHideFromSearch: true,
-                    canRevealInFinder: false, isSymbolIcon: true)
+                    canRevealInFinder: false, canDragOut: false, isSymbolIcon: true)
             case .quicklink:
                 return KindDescriptor(
                     label: "Quicklink", sectionTitle: "Quicklinks",
                     openVerb: "Open Quicklink", canHideFromSearch: false,
-                    canRevealInFinder: false, isSymbolIcon: true)
+                    canRevealInFinder: false, canDragOut: false, isSymbolIcon: true)
             case .appleShortcut:
                 // File-backed so every row draws the Shortcuts app's own icon.
                 return KindDescriptor(
                     label: "Apple Shortcut", sectionTitle: "Apple Shortcuts",
                     openVerb: "Run Shortcut", canHideFromSearch: true,
-                    canRevealInFinder: false, isSymbolIcon: false)
+                    canRevealInFinder: false, canDragOut: false, isSymbolIcon: false)
             case .extensionCommand:
                 // The label is per-entry, the owning extension's title; this is the fallback.
                 return KindDescriptor(
                     label: "Extension", sectionTitle: "Extensions",
                     openVerb: "Run Command", canHideFromSearch: true,
-                    canRevealInFinder: false, isSymbolIcon: true)
+                    canRevealInFinder: false, canDragOut: false, isSymbolIcon: true)
             case .meeting:
                 return KindDescriptor(
                     label: "Meeting", sectionTitle: "Meetings",
                     openVerb: "Join Meeting", canHideFromSearch: false,
-                    canRevealInFinder: false, isSymbolIcon: true)
+                    canRevealInFinder: false, canDragOut: false, isSymbolIcon: true)
             }
         }
     }
@@ -97,6 +97,8 @@ struct AppEntry: Identifiable, Hashable, Sendable {
         /// Only where Settings lists a per-item checkbox to put it back: a hide is never one-way.
         let canHideFromSearch: Bool
         let canRevealInFinder: Bool
+        /// Only an application: a pane or a shortcut dropped on another app opens nothing there.
+        let canDragOut: Bool
         let isSymbolIcon: Bool
     }
 
@@ -194,6 +196,8 @@ struct AppEntry: Identifiable, Hashable, Sendable {
     var canRevealInFinder: Bool { kind.descriptor.canRevealInFinder }
 
     var canHideFromSearch: Bool { kind.descriptor.canHideFromSearch }
+
+    var canDragOut: Bool { kind.descriptor.canDragOut }
 
     /// What this row draws, and the only thing any icon path needs to ask.
     var iconSource: EntryIcon { iconOverride ?? defaultIcon }

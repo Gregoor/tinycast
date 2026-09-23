@@ -424,6 +424,7 @@ struct LauncherScreen: PaletteScreen {
                 if let index = rows.firstIndex(of: .entry(app)) { vm.selection = index }
                 openActions()
             },
+            onDropped: { core.paletteCoordinator.dragLanded() },
             fallbacks: fallbackSection
         )
     }

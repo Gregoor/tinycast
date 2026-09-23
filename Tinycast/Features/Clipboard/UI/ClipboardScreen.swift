@@ -133,7 +133,7 @@ struct ClipboardScreen: PaletteScreen {
                         openActions()
                     },
                     onDragPayload: { core.clipboardCoordinator.dragPayload(for: $0) },
-                    onDropped: { core.clipboardCoordinator.clipDropped() }
+                    onDropped: { core.paletteCoordinator.dragLanded() }
                 )
                 .frame(width: metrics.size.clipboardListWidth)
                 Rectangle()

@@ -10,6 +10,7 @@ struct FileSearchList: View {
     let onSelect: (FileSearchResult) -> Void
     let onActivate: (FileSearchResult) -> Void
     let onActions: (FileSearchResult) -> Void
+    let onDropped: () -> Void
 
     private var firstRowSelected: Bool {
         selectedID != nil && selectedID == results.first?.id
@@ -25,7 +26,8 @@ struct FileSearchList: View {
                             .selectionFrame(result.id == selectedID)
                             .contentShape(Rectangle())
                             .onRowClick(
-                                select: { onSelect(result) }, activate: { onActivate(result) }
+                                select: { onSelect(result) }, activate: { onActivate(result) },
+                                drag: drag(for: result)
                             )
                             .onRightClick { onActions(result) }
                     }
@@ -42,6 +44,13 @@ struct FileSearchList: View {
                 scroll, row: selectedID, atOrigin: firstRowSelected, proxy: proxy)
         }
         .onDisappear { IconCache.purgeFitted() }
+    }
+
+    /// The row's own fitted tile, which is warm by the time a pointer can reach it.
+    private func drag(for result: FileSearchResult) -> RowDrag {
+        RowDrag(
+            item: { .file(result.url, image: IconCache.cachedFitted(forFile: result.id)) },
+            dropped: onDropped)
     }
 }
 

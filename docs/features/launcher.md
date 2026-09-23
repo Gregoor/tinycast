@@ -699,6 +699,24 @@ Application and System Settings results expose **Show in Finder** in their ⌘K 
 shortcut is available for them. `AppEntry.canRevealInFinder` is the one rule both the menu row and
 the key handler read, so the advertised chord can't drift from the behavior.
 
+## Dragging an application out
+
+An application row drags its bundle onto the Dock, into a System Settings privacy list, or anywhere
+else that takes an app. `AppEntry.canDragOut` — `KindDescriptor.canDragOut`, true for `.application`
+alone — is the one rule: a Settings pane or a shortcut dropped on another app opens nothing there,
+and every new kind has to say so to build.
+
+The row uses `onRowTap(drag:)` from `DesignSystem/Interaction/RowClick.swift`, the tap-shaped sibling
+of the clipboard's and File Search's `onRowClick(drag:)`. A launcher click launches rather than
+selects, so the press **activates on the release** — the one moment a press is known not to have
+become a drag. A row that cannot drag gets plain `onTapGesture`, so every other kind, the fallbacks
+and the lead card keep SwiftUI's own gesture. The operation is **copy only**, as
+[clipboard.md](clipboard.md#dragging-out) explains: on the boot volume a file-URL drag would default
+to a move, and moving an app out of `/Applications` is never what a launcher should do. The image is
+the shared icon bitmap when it is warm and `NSWorkspace`'s otherwise, never a decode, and a landed
+drop hides the palette through `PaletteCoordinator.dragLanded()`. Compact mode's favorite buttons do
+not drag.
+
 ## Quitting and restarting apps
 
 `RunningAppsMonitor` (live from `NSWorkspace` launch/terminate notifications) drives both the row's

@@ -68,14 +68,14 @@ struct ClipboardList: View {
                             .contentShape(Rectangle())
                             // The light catcher: `.contextMenu` stalls.
                             .onRightClick { onActions(item) }
-                            .clipDraggable(
-                                payload: { onDragPayload(item) },
-                                onSelect: { onSelect(item) },
-                                onActivate: {
+                            .onRowClick(
+                                select: { onSelect(item) },
+                                activate: {
                                     onSelect(item)
                                     onActivate()
                                 },
-                                onDropped: onDropped
+                                drag: RowDrag(
+                                    item: { onDragPayload(item)?.dragItem }, dropped: onDropped)
                             )
                         }
                     }

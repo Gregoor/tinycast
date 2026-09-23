@@ -103,7 +103,8 @@ struct FileSearchScreen: PaletteScreen {
                     onActions: { result in
                         if let index = rows.firstIndex(of: result) { vm.selection = index }
                         openActions()
-                    }
+                    },
+                    onDropped: { core.paletteCoordinator.dragLanded() }
                 )
                 .frame(width: metrics.size.clipboardListWidth)
                 Rectangle()

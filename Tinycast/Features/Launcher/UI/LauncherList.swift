@@ -17,6 +17,7 @@ struct LauncherList: View {
     var onCardActions: () -> Void = {}
     let onActivate: (AppEntry) -> Void
     let onActions: (AppEntry) -> Void
+    let onDropped: () -> Void
     /// The `Use "…" with` section, always last; nil when nothing is typed.
     var fallbacks: FallbackSection?
     @Environment(RunningAppsMonitor.self) private var runningApps
@@ -156,7 +157,7 @@ struct LauncherList: View {
                                         slot: slot
                                     )
                                     .contentShape(Rectangle())
-                                    .onTapGesture { onActivate(app) }
+                                    .onRowTap(drag: drag(for: app)) { onActivate(app) }
                                     .onRightClick { onActions(app) }
                                     .selectionFrame(app.id == selectedRowID)
                                 case .fallback(let app, let index):
@@ -185,6 +186,14 @@ struct LauncherList: View {
                 }
             }
         }
+    }
+
+    /// Cache-only icon: the row holds its own smaller bitmap, and a decode would stall the drag.
+    private func drag(for app: AppEntry) -> RowDrag? {
+        guard app.canDragOut else { return nil }
+        return RowDrag(
+            item: { .file(app.url, image: IconCache.cached(app.iconSource, fileURL: app.url)) },
+            dropped: onDropped)
     }
 }
 

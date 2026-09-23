@@ -117,6 +117,11 @@ final class PaletteCoordinator {
         windowController.hide(restoreFocus: restoreFocus)
     }
 
+    /// A row dragged out and landed is a finished errand, so the palette leaves as after a paste.
+    func dragLanded() {
+        hidePalette(restoreFocus: false)
+    }
+
     /// Reset to the root search now rather than after the Pop to Root Search delay.
     func popToRootNow() {
         windowController.popToRootNow()

@@ -220,6 +220,17 @@ empty completed query says what the active filter admits ("No files found", "No 
 screen with no recents says "Type to search files and folders", and query creation or execution failure
 says "File search is unavailable" inline.
 
+### Dragging out
+
+A row drags its file or folder straight into another app — a Finder window, a browser's upload field,
+a mail being written — through the same `onRowClick(drag:)` the clipboard uses, so the press, the
+**copy-only** operation and the fly-back are the ones [clipboard.md](clipboard.md#dragging-out)
+explains. Copy matters more here than there: every result is the user's own file, and on the boot
+volume a plain file-URL drag would default to moving it. The image is the row's fitted tile, already
+warm by the time a pointer can reach it; a landed drop hides the palette through
+`PaletteCoordinator.dragLanded()`. There is no stat first: a result is seconds old, and its session is
+cleared whenever the palette hides.
+
 ## Invocation
 
 Settings ▸ File Search owns the `fileSearchEnabled` switch, which is off when its preference is absent,
