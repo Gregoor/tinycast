@@ -71,6 +71,13 @@ final class ExtensionCoordinator {
         guard settings.extensionsEnabled,
             let entry = extensions.launcherEntry(forEntryID: entryID)
         else { return }
+        // The shortcut's second press closes its command, as a mode command's does.
+        if paletteCoordinator.isShowing(.extensionCommand),
+            extensions.running == ExtensionCommandRef(entryID: entryID)
+        {
+            paletteCoordinator.hidePalette()
+            return
+        }
         runExtensionCommand(entry)
     }
 
