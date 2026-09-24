@@ -139,7 +139,12 @@ struct ExtensionsSettingsView: View {
                         // listed and counted here rather than in a section of its own.
                         ForEach(Array(matchingProviders.enumerated()), id: \.element) { index, id in
                             if index > 0 || !matching.isEmpty { Divider() }
-                            RootSearchProviderRow(id: id, status: indexStatuses[id])
+                            RootSearchProviderRow(
+                                id: id, status: indexStatuses[id],
+                                isExpanded: expanded == providerKey(id),
+                                onToggle: {
+                                    expanded = expanded == providerKey(id) ? nil : providerKey(id)
+                                })
                         }
                     }
                     .padding(.vertical, -Self.rowPadding)
@@ -151,6 +156,9 @@ struct ExtensionsSettingsView: View {
             }
         }
     }
+
+    /// Providers share the extensions' one-at-a-time disclosure, under a key they cannot collide with.
+    private func providerKey(_ id: String) -> String { "provider:\(id)" }
 
     /// Extensions plus the providers listed among them, which is what the section above shows.
     private var installedCount: Int {
@@ -363,31 +371,121 @@ struct ExtensionsSettingsView: View {
 }
 
 /// A resident root-search provider, listed with the installed extensions because that is what it is to
-/// the user: an extension that contributes launcher results. It does not expand — its one preference is
-/// still a file the README tells you to edit.
+/// the user: an extension that contributes launcher results, and one whose ratings preference is the
+/// app's to write and the provider's to read back.
 private struct RootSearchProviderRow: View {
     let id: String
     let status: RootSearchIndexStatus?
+    let isExpanded: Bool
+    let onToggle: () -> Void
+
+    @State private var choice: RootSearchRatingsPreference.Choice = .rottenTomatoes
+
+    /// A grouped `Form` row's own vertical padding, restored around the summary.
+    private static let rowPadding: CGFloat = 15
+
+    private var cacheDirectory: URL { ExtensionCatalog.providerCachePath(for: id) }
+    private var name: String { id.localizedCapitalized }
 
     var body: some View {
-        SettingsRow(
-            title: id.localizedCapitalized, subtitle: subtitle, subtitleLineLimit: 2
-        ) {
+        VStack(alignment: .leading, spacing: 0) {
+            summary
+                .padding(.vertical, Self.rowPadding)
+            if isExpanded {
+                settings
+                    .padding(.bottom, Theme.Spacing.lg)
+            }
+        }
+    }
+
+    private var summary: some View {
+        SettingsRow(title: name, subtitle: subtitle) {
             Image(systemName: "film")
                 .font(.system(size: 14))
                 .foregroundStyle(.secondary)
                 .frame(width: Theme.Size.rowIcon, height: Theme.Size.rowIcon)
         } trailing: {
-            EmptyView()
+            Image(systemName: "chevron.down")
+                .rotationEffect(.degrees(isExpanded ? 180 : 0))
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
+        }
+        // The whole row toggles: a `DisclosureGroup` would only respond to its chevron.
+        .contentShape(.rect)
+        .onTapGesture(perform: onToggle)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityLabel(isExpanded ? "Hide \(name) settings" : "Configure \(name)")
+    }
+
+    /// One line, so it cannot truncate: the exact date and its age are in the panel below.
+    private var subtitle: String {
+        guard let status else { return "Search provider · nothing downloaded yet" }
+        return "Search provider · \(status.publishedAt.formatted(date: .abbreviated, time: .omitted))"
+    }
+
+    private var settings: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
+            Grid(
+                alignment: .leading, horizontalSpacing: Theme.Spacing.lg,
+                verticalSpacing: Theme.Spacing.md
+            ) {
+                heading("Ratings")
+                SettingsCardRow(title: "Shown on a result", detail: choice.detail) {
+                    Picker("", selection: rating) {
+                        ForEach(RootSearchRatingsPreference.Choice.allCases, id: \.self) { option in
+                            Text(option.title).tag(option)
+                        }
+                    }
+                    .labelsHidden()
+                    .fixedSize()
+                }
+
+                rule
+                heading("Index")
+                SettingsCardRow(title: "Last published", detail: published) {
+                    EmptyView()
+                }
+            }
+        }
+        // Indented under the row's icon, so the settings read as belonging to the row above them.
+        .padding(.leading, Theme.Size.rowIcon + Theme.Spacing.lg)
+        .padding(.bottom, Theme.Spacing.lg)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .onAppear { choice = RootSearchRatingsPreference.choice(inCache: cacheDirectory) }
+    }
+
+    /// Writes on a pick, never on the read that seeded it: `onChange` cannot tell the two apart.
+    private var rating: Binding<RootSearchRatingsPreference.Choice> {
+        Binding(
+            get: { choice },
+            set: { picked in
+                choice = picked
+                RootSearchRatingsPreference.write(picked, inCache: cacheDirectory)
+            })
+    }
+
+    private var published: String {
+        guard let status else { return "Nothing downloaded yet." }
+        let exact = status.publishedAt.formatted(date: .long, time: .shortened)
+        return "\(exact) · \(status.publishedAt.formatted(.relative(presentation: .named)))"
+    }
+
+    private func heading(_ title: String) -> some View {
+        GridRow {
+            Text(title)
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.tertiary)
+                .gridCellColumns(2)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.top, Theme.Spacing.xs)
         }
     }
 
-    /// The index's own date rather than the release's: a stale one here is what a stopped sync looks
-    /// like, which is the whole reason a provider reports it.
-    private var subtitle: String {
-        guard let status else { return "Root search provider · nothing downloaded yet." }
-        return "Root search provider · published "
-            + "\(status.publishedAt.formatted(date: .long, time: .shortened))"
+    private var rule: some View {
+        GridRow {
+            Divider()
+                .gridCellColumns(2)
+        }
     }
 }
 
