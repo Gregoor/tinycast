@@ -12,6 +12,8 @@ final class PaletteCoordinator {
     private let windowController: PaletteWindowController
     /// Features whose launcher rows are read from outside Tinycast re-read them on each open.
     var onLauncherShown: (() -> Void)?
+    /// Screens that snapshot other apps re-read them on every open, a restored one included.
+    var onScreenOpening: ((PaletteMode) -> Void)?
 
     init(
         palette: PaletteState,
@@ -80,11 +82,16 @@ final class PaletteCoordinator {
         mode: PaletteMode, restoreAnyMode: Bool = false, seeding query: String? = nil
     ) {
         let preserved = windowController.consumePreservedState()
+        let restoring = preserved && (restoreAnyMode || palette.mode == mode)
+        // Resetting a screen the pop to root already reset would only re-render the whole palette.
+        let alreadyFresh = windowController.isPoppedToRoot && palette.mode == mode
         // A carried query always opens the screen fresh: restoring the previous one would drop it.
-        if query != nil || !(preserved && (restoreAnyMode || palette.mode == mode)) {
+        if query != nil || !(restoring || alreadyFresh) {
             navigate(to: mode)
         }
         if let query { palette.query = query }
+        // Before the show: `targetApp` must still name the app in front, and no row may pop in.
+        onScreenOpening?(palette.mode)
         windowController.show()
         if palette.mode == .fileSearch { fileSearch.search(palette.query) }
         if palette.mode == .menuSearch { menuSearch.filter(palette.query) }
@@ -112,6 +119,11 @@ final class PaletteCoordinator {
         menuSearch.reset()
         windowSwitch.reset()
         windowController.hide(restoreFocus: restoreFocus)
+    }
+
+    /// A row dragged out and landed is a finished errand, so the palette leaves as after a paste.
+    func dragLanded() {
+        hidePalette(restoreFocus: false)
     }
 
     /// Reset to the root search now rather than after the Pop to Root Search delay.

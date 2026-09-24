@@ -68,12 +68,21 @@ final class ClipboardCoordinator {
         clipboardStore.enforceLimits()
     }
 
-    /// ↵ runs the configured default; ⌘↵ the other one, so the two chords stay a swapped pair.
-    func activate(_ item: ClipboardItem, inverted: Bool = false) {
-        if (settings.clipboardDefaultAction == .copy) != inverted {
-            copyToClipboard(item)
-        } else {
-            paste(item)
+    /// ↵ runs the configured default and the other chords follow it; false when `chord` has none.
+    @discardableResult
+    func activate(_ item: ClipboardItem, chord: ClipboardChord = .return) -> Bool {
+        guard let action = settings.clipboardDefaultAction.action(for: chord, on: item) else {
+            return false
+        }
+        perform(action, on: item)
+        return true
+    }
+
+    func perform(_ action: ClipboardDefaultAction, on item: ClipboardItem) {
+        switch action {
+        case .paste: paste(item)
+        case .copy: copyToClipboard(item)
+        case .pastePlainText: pasteAsPlainText(item)
         }
     }
 
@@ -85,6 +94,15 @@ final class ClipboardCoordinator {
             selectClip(item)
         } else {
             reportUnavailable(item)
+        }
+    }
+
+    /// A file's path stays valid text after the file goes, so this never reports it missing.
+    func pasteAsPlainText(_ item: ClipboardItem) {
+        let previous = windowController.previousApp
+        paletteCoordinator.hidePalette(restoreFocus: false)
+        if Paster.pastePlainText(item, store: clipboardStore, previousApp: previous) {
+            selectClip(item)
         }
     }
 
@@ -106,9 +124,9 @@ final class ClipboardCoordinator {
     func deleteAllClips() async {
         guard
             await core.confirm(
-                title: "Clear clipboard history?",
-                message: "Every entry goes, pinned ones included. This can't be undone.",
-                symbol: PaletteMode.clipboard.systemImage, confirmTitle: "Clear History")
+                title: "Delete All Entries",
+                message: "Are you sure you want to proceed with deleting all clipboard history entries?",
+                symbol: PaletteMode.clipboard.systemImage, confirmTitle: "Delete All")
         else { return }
         clearHistory()
     }
@@ -146,11 +164,6 @@ final class ClipboardCoordinator {
         let payload = item.dragPayload
         guard case .file = payload else { return payload }
         return clipURL(for: item).map(ClipDragPayload.file)
-    }
-
-    /// A landed drop is a finished errand, so the palette leaves as it does after a paste.
-    func clipDropped() {
-        paletteCoordinator.hidePalette(restoreFocus: false)
     }
 
     func openClip(_ item: ClipboardItem) {

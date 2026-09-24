@@ -57,7 +57,7 @@ events as searchable launcher entries.
 - **`MeetingLink`** — the join link plus its `Provider` and the account whose calendar carried it.
   Ten named services, plus `.generic` for any other `http(s)` link the event carries.
 - **`MeetingEvent`** — one occurrence, flattened out of `EKEvent`.
-- **`UpcomingWindow`** — `agenda`, `carded`, `joinable` and `countdown`.
+- **`UpcomingWindow`** — `agenda`, `carded`, `joinable`, `countdown` and a row's `rowPill`.
 - **`MeetingDay`** — the Today / Tomorrow buckets, mirroring the clipboard's `DateBucket`.
 - **`MeetingSpan`** — how far ahead the store reads, and the phrasing that names those days.
 - **`MenuBarSummary`** — which event the menu bar carries, and for how long.
@@ -196,11 +196,29 @@ which scopes Observation to the label instead of re-running either scene. It fal
 glyph when nothing is due, so the calendar item never disappears out from under the user. In **Meeting
 Title** mode, once no event remains today it instead reads `No upcoming events`.
 
-`CalendarMenuBarMenu` lists calendar actions only — `Join <title>` and `Open in Calendar...` for the
-displayed event, then `My Schedule` and `Calendar Settings...` — so the two menus never repeat each
-other. `Join` is absent for a linkless appointment rather than opening Calendar under a name that
+**Hide when there are no upcoming events** instead takes the item out whenever it would show the bare
+glyph or that placeholder — whenever `menuBarEvent` is nil — so it follows `Show Upcoming Events`,
+`Only show events with meetings` and `Hide Current Event` rather than adding a rule of its own: on
+*Today* it leaves after the day's last event, on a minutes lead it also leaves between meetings. The
+scene has to read that fact, so `CalendarCoordinator.hasMenuBarEvent` is **stored and written only
+when it flips** — a derived read would re-run `TinycastApp.body`, and the main menu with it, on every
+minute tick. SwiftUI writes
+`false` back through `isInserted` when it removes the item itself, so the insertion setter ignores a
+removal while the item is hidden for being empty: only a drag-out turns the display to `.disabled`.
+
+`CalendarMenuBarMenu` lists calendar actions only — `Join <title>`, `Open in Calendar...` and
+`Dismiss` for the displayed event, then `My Schedule` and `Calendar Settings...` — so the two menus
+never repeat each other. `Join` is absent for a linkless appointment rather than opening Calendar under a name that
 lies. **A bare click never joins**: the menu bar is not a button, and a mis-click there would open a
 call.
+
+`Dismiss` takes the displayed occurrence out of the menu bar, and `MenuBarSummary.event` filters it
+out exactly as it filters a lapsed one — so the next event inside its own lead takes the space with
+no second rule, and with nothing behind it the item falls back to the glyph or leaves under **Hide
+when there are no upcoming events**. The set lives on `CalendarCoordinator` and lasts the launch, the
+way `autoJoined` does: a dismissal is a reaction to what is on screen now, not a preference worth
+persisting, and the ids are pruned against the store so the set cannot grow. It is deliberately per
+occurrence rather than per series — dismissing today's standup says nothing about tomorrow's.
 
 ## Auto join and the preview
 

@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 // The few pieces more than one Settings pane or editor needs; everything else stays feature-owned.
@@ -7,13 +8,14 @@ struct SettingsRow<Icon: View, Trailing: View>: View {
     let title: String
     var subtitle: String?
     var subtitleLineLimit = 1
+    var alignment: VerticalAlignment = .center
     /// Set when a search result points at this row, so its title can carry the pulse.
     var anchor: SettingsAnchor?
     @ViewBuilder var icon: Icon
     @ViewBuilder var trailing: Trailing
 
     var body: some View {
-        HStack(spacing: Theme.Spacing.lg) {
+        HStack(alignment: alignment, spacing: Theme.Spacing.lg) {
             icon
             VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
                 Group {
@@ -43,11 +45,12 @@ struct SettingsRow<Icon: View, Trailing: View>: View {
 extension SettingsRow where Icon == EmptyView {
     init(
         title: String, subtitle: String? = nil, subtitleLineLimit: Int = 1,
-        anchor: SettingsAnchor? = nil,
+        alignment: VerticalAlignment = .center, anchor: SettingsAnchor? = nil,
         @ViewBuilder trailing: () -> Trailing
     ) {
         self.init(
             title: title, subtitle: subtitle, subtitleLineLimit: subtitleLineLimit,
+            alignment: alignment,
             anchor: anchor, icon: { EmptyView() },
             trailing: trailing)
     }
@@ -212,32 +215,128 @@ struct SettingsFilterField: View {
     }
 }
 
-/// Dressed like `ShortcutRecorder`; a persistent `TextField` — swapping views broke repeat focus.
+private struct AliasTextField: NSViewRepresentable {
+    @Binding var text: String
+    @Binding var focused: Bool
+    let onCancel: () -> Void
+    @Environment(\.isEnabled) private var isEnabled
+
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+
+    func makeNSView(context: Context) -> NSTextView {
+        let editor = NSTextView()
+        editor.delegate = context.coordinator
+        editor.isRichText = false
+        editor.importsGraphics = false
+        editor.allowsUndo = true
+        editor.drawsBackground = false
+        editor.backgroundColor = .clear
+        editor.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
+        editor.textContainerInset = NSSize(width: 0, height: 5.5)
+        editor.textContainer?.lineFragmentPadding = 0
+        editor.textContainer?.maximumNumberOfLines = 1
+        editor.textContainer?.lineBreakMode = .byTruncatingTail
+        editor.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        editor.setAccessibilityRole(.textField)
+        return editor
+    }
+
+    func updateNSView(_ editor: NSTextView, context: Context) {
+        context.coordinator.field = self
+        if editor.string != text { editor.string = text }
+        editor.isEditable = isEnabled
+        editor.isSelectable = isEnabled
+        editor.textColor = isEnabled ? .labelColor : .disabledControlTextColor
+        if !focused, editor.window?.firstResponder === editor {
+            editor.window?.makeFirstResponder(nil)
+        }
+    }
+
+    @MainActor
+    final class Coordinator: NSObject, NSTextViewDelegate {
+        var field: AliasTextField
+
+        init(_ field: AliasTextField) {
+            self.field = field
+        }
+
+        func textDidChange(_ notification: Notification) {
+            guard let editor = notification.object as? NSTextView else { return }
+            field.text = editor.string
+        }
+
+        func textView(
+            _ textView: NSTextView, shouldChangeTextIn range: NSRange,
+            replacementString: String?
+        ) -> Bool {
+            guard let replacementString, replacementString.contains(where: \.isNewline) else {
+                return true
+            }
+            textView.insertText(
+                String(replacementString.map { $0.isNewline ? " " : $0 }),
+                replacementRange: range)
+            return false
+        }
+
+        func textDidBeginEditing(_ notification: Notification) {
+            field.focused = true
+        }
+
+        func textDidEndEditing(_ notification: Notification) {
+            field.focused = false
+        }
+
+        func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+            switch commandSelector {
+            case #selector(NSResponder.insertNewline(_:)):
+                textView.window?.makeFirstResponder(nil)
+                return true
+            case #selector(NSResponder.insertTab(_:)):
+                textView.window?.recalculateKeyViewLoop()
+                textView.window?.selectNextKeyView(textView)
+                return true
+            case #selector(NSResponder.insertBacktab(_:)):
+                textView.window?.recalculateKeyViewLoop()
+                textView.window?.selectPreviousKeyView(textView)
+                return true
+            case #selector(NSResponder.cancelOperation(_:)):
+                field.onCancel()
+                textView.window?.makeFirstResponder(nil)
+                return true
+            default:
+                return false
+            }
+        }
+    }
+}
+
+/// Dressed like `ShortcutRecorder`; the persistent AppKit field preserves focus across updates.
 struct AliasField: View {
     /// The owner's `preferenceKey`, taken raw so a row without an `AppEntry` can carry one too.
     let key: String
     let name: String
     @Environment(AliasStore.self) private var aliases
     @State private var draft = ""
-    @FocusState private var focused: Bool
+    @State private var focused = false
 
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: Theme.Radius.menu, style: .continuous)
-        let placeholder = Text("Add Alias").foregroundStyle(Theme.Colors.textSecondary)
         HStack(spacing: Theme.Spacing.xs) {
-            TextField("", text: $draft, prompt: placeholder)
-                .textFieldStyle(.plain)
-                .labelsHidden()
-                .font(Theme.Typography.keyCap)
-                .focused($focused)
-                // The system ring insets the field editor on focus, hopping the placeholder left.
-                .focusEffectDisabled()
-                .onSubmit(commit)
-                .onExitCommand(perform: revert)
-                // The pane's `releasesFocusOnOutsideClick` resigns; this catches it landing.
-                .onChange(of: focused) { _, now in
-                    if !now { commit() }
+            ZStack(alignment: .leading) {
+                if draft.isEmpty {
+                    Text("Add Alias")
+                        .font(Theme.Typography.keyCap)
+                        .foregroundStyle(Theme.Colors.textSecondary)
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
                 }
+                AliasTextField(text: $draft, focused: $focused, onCancel: revert)
+                    .focusEffectDisabled()
+                    // The pane's `releasesFocusOnOutsideClick` resigns; this catches it landing.
+                    .onChange(of: focused) { _, now in
+                        if !now { commit() }
+                    }
+            }
             if !draft.isEmpty {
                 Button(action: clear) {
                     Image(systemName: "xmark.circle.fill")
@@ -261,13 +360,10 @@ struct AliasField: View {
             }
             draft = aliases.alias(for: new) ?? ""
         }
-        .padding(.horizontal, Theme.Spacing.sm)
+        .padding(.horizontal, Theme.Spacing.sm + 1)
         .frame(width: Theme.Size.shortcutRecorder, height: 24)
         .background(shape.fill(Theme.Colors.cardFill))
-        .overlay(
-            shape.strokeBorder(
-                focused ? Color.accentColor : Theme.Colors.cardStroke, lineWidth: 1)
-        )
+        .overlay(shape.strokeBorder(Theme.Colors.cardStroke, lineWidth: 1))
         .clipShape(shape)
         .accessibilityLabel("Alias for \(name)")
     }

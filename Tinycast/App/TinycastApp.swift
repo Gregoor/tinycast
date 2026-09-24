@@ -7,6 +7,8 @@ struct TinycastApp: App {
     @AppStorage(SettingsKey.showInMenuBar) private var showInMenuBar = true
     @AppStorage(SettingsKey.calendarMenuBarDisplay)
     private var calendarMenuBarDisplay = CalendarMenuBarDisplay.disabled.rawValue
+    @AppStorage(SettingsKey.calendarMenuBarHidesWhenEmpty)
+    private var calendarMenuBarHidesWhenEmpty = false
 
     // Channel-aware: "Tinycast", "Tinycast Dev", or "Tinycast Beta".
     private let appName = Bundle.main.appDisplayName
@@ -30,16 +32,27 @@ struct TinycastApp: App {
     /// Reads the raw preference so the scene invalidates, but writes through `AppSettings`: dragging
     /// the item out must also stop the clock and move the picker, not just the stored value.
     private var calendarMenuBarInsertion: Binding<Bool> {
-        Binding(
-            get: { calendarMenuBarDisplay != CalendarMenuBarDisplay.disabled.rawValue },
+        let isInserted =
+            calendarMenuBarDisplay != CalendarMenuBarDisplay.disabled.rawValue
+            && !isCalendarMenuBarHiddenWhenEmpty
+        return Binding(
+            get: { isInserted },
             set: { inserted in
                 let settings = AppCore.shared.settings
                 if !inserted {
+                    // SwiftUI echoes our own removal back here; only a drag-out means "turn it off".
+                    guard !isCalendarMenuBarHiddenWhenEmpty else { return }
                     settings.calendarMenuBarDisplay = .disabled
                 } else if settings.calendarMenuBarDisplay == .disabled {
                     settings.calendarMenuBarDisplay = .meetingIcon
                 }
             })
+    }
+
+    /// Read in `body`, so Observation re-runs the scene when the coordinator's flag flips.
+    private var isCalendarMenuBarHiddenWhenEmpty: Bool {
+        calendarMenuBarHidesWhenEmpty
+            && !AppCore.shared.calendarCoordinator.hasMenuBarEvent
     }
 
     /// Declared, not assigned to `NSApp.mainMenu`: SwiftUI rebuilds the menu on any scene change.
@@ -54,8 +67,12 @@ struct TinycastApp: App {
                 .keyboardShortcut(",")
         }
         CommandGroup(replacing: .appTermination) {
-            Button("Close Settings") { AppCore.shared.settingsCoordinator.closeSettings() }
-                .keyboardShortcut("q")
+            Button("Close Window") {
+                // The chat window closes itself when it is in front; otherwise ⌘Q is Settings'.
+                guard !AppCore.shared.aiChatCoordinator.closeWindowIfKey() else { return }
+                AppCore.shared.settingsCoordinator.closeSettings()
+            }
+            .keyboardShortcut("q")
         }
     }
 }

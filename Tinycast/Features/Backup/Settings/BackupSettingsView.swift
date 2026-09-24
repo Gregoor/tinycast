@@ -88,8 +88,8 @@ struct BackupSettingsView: View {
                     Text(raycastFileSubtitle)
                 }
                 LabeledContent {
-                    SecureField(
-                        "Passphrase", text: $passphrase, prompt: Text("Export password")
+                    RevealableSecureField(
+                        title: "Passphrase", text: $passphrase, prompt: Text("Export password")
                     )
                     .labelsHidden()
                     .textFieldStyle(.roundedBorder)

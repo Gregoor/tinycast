@@ -30,6 +30,8 @@ struct ClipboardTests {
         fileEntriesAreFoundByNameAndFolder()
         fileKindClassification()
         importedFilesArriveOncePerPath()
+        defaultActionChords()
+        plainTextSkipsTheFile()
 
         print("\(passes)/\(passes + failures) passed")
         if failures > 0 { exit(1) }
@@ -494,7 +496,11 @@ struct ClipboardTests {
             expect(texts(reopened) == ["first", "third", "second"], "unpin after a reload")
 
             reopened.clearAll()
-            expect(reopened.items.isEmpty, "Clear History takes pins too")
+            expect(texts(reopened) == ["first"], "Clear History spares the pin")
+
+            let afterClear = ClipboardStore(directory: dir)
+            afterClear.load()
+            expect(texts(afterClear) == ["first"], "and the unpinned rows are gone from disk")
         }
     }
 
@@ -626,6 +632,39 @@ struct ClipboardTests {
                 store.items.allSatisfy { $0.imagePath == nil },
                 "an imported file row is never adopted into imagesDir")
         }
+    }
+
+    /// The default takes ↵ and Paste its chord; the Paste and Copy defaults keep their old pair.
+    static func defaultActionChords() {
+        let text = ClipboardItem(text: "hello", sourceBundleID: nil)
+        let file = ClipboardItem(filePath: "/Users/me/report.pdf", sourceBundleID: nil)
+        let image = ClipboardItem(imagePath: "/tmp/shot.png", sourceBundleID: nil)
+        let expected: [ClipboardDefaultAction: [ClipboardDefaultAction]] = [
+            .paste: [.paste, .copy, .pastePlainText],
+            .copy: [.copy, .paste, .pastePlainText],
+            .pastePlainText: [.pastePlainText, .copy, .paste]
+        ]
+        for (defaultAction, actions) in expected {
+            for item in [text, file] {
+                expect(
+                    ClipboardChord.allCases.map { defaultAction.action(for: $0, on: item) } == actions,
+                    "\(defaultAction) orders ↵, ⌘↵, ⌃⌘↵ as \(actions) on a \(item.kind) entry")
+            }
+            let imageActions = ClipboardChord.allCases.map { defaultAction.action(for: $0, on: image) }
+            let paste: ClipboardDefaultAction = defaultAction == .copy ? .copy : .paste
+            expect(imageActions.first == paste, "\(defaultAction) on an image never pastes plain")
+            expect(imageActions.last == .some(nil), "and ⌃⌘↵ has nothing to run on it")
+        }
+    }
+
+    static func plainTextSkipsTheFile() {
+        expect(ClipboardItem(text: "hi", sourceBundleID: nil).plainText == "hi", "text is itself")
+        expect(
+            ClipboardItem(filePath: "/a/b.pdf", sourceBundleID: nil).plainText == "/a/b.pdf",
+            "a file is its path")
+        expect(
+            ClipboardItem(imagePath: "/a/b.png", sourceBundleID: nil).plainText == nil,
+            "an image has no plain text")
     }
 
     // MARK: - Harness

@@ -24,9 +24,9 @@ final class ChatGPTSubscriptionManager {
         client = CodexAppServerClient(
             workspace: root.appending(path: "Workspace", directoryHint: .isDirectory))
         turns = CodexTurnRunner(client: client)
-        turns.connect = { [weak self] in
+        turns.connect = { [weak self] servers in
             guard let self else { throw CancellationError() }
-            try await self.ensureConnected()
+            try await self.ensureConnected(toolServers: servers)
             return self.models
         }
         turns.onTurnEnded = { [weak self] in self?.turnDidEnd() }
@@ -60,10 +60,20 @@ final class ChatGPTSubscriptionManager {
         client.stop()
     }
 
-    /// What a turn needs before it starts: a running server and a signed-in account.
-    private func ensureConnected() async throws {
+    /// A helper launched with a server no longer offered stops now, not ten idle minutes later.
+    func dropWithdrawnServers(keeping offered: Set<String>) {
+        guard !turns.isActive, client.toolServers.contains(where: { !offered.contains($0.handle) })
+        else { return }
         idleTask?.cancel()
-        try await client.start()
+        turns.reset()
+        client.stop()
+    }
+
+    /// What a turn needs before it starts: a running server and a signed-in account.
+    private func ensureConnected(toolServers: [AIToolServer]) async throws {
+        idleTask?.cancel()
+        // A changed list relaunches, since it is fixed at exec; the account outlives the process.
+        try await client.start(toolServers: toolServers)
         if account == nil, try await restoreAccount() {
             phase = .connected
             await loadModelsAndLimits()
@@ -93,7 +103,7 @@ final class ChatGPTSubscriptionManager {
     private func refreshNow() async {
         phase = .starting
         do {
-            try await client.start()
+            try await client.startForCheck()
             guard try await restoreAccount() else {
                 phase = .signedOut
                 client.stop()
@@ -231,8 +241,10 @@ struct CodexInstalledProvider: AIProvider {
     let turns: CodexTurnRunner
     let model: String
     let effort: String?
+    /// Set only by chat: a quick action has nothing to call and arms no server.
+    var toolServers: AIToolServerSession?
 
     func stream(_ request: AIRequest) -> AIProviderStream {
-        turns.stream(request, model: model, effort: effort)
+        turns.stream(request, model: model, effort: effort, toolServers: toolServers)
     }
 }

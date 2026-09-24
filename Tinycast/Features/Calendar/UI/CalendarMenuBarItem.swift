@@ -62,6 +62,7 @@ struct CalendarMenuBarMenu: View {
                     title: "Open in Calendar...",
                     color: meeting.link == nil ? meeting.calendarColor : nil)
             }
+            Button("Dismiss") { AppCore.shared.calendarCoordinator.dismissMenuBarEvent(meeting) }
             Divider()
         }
         Button("My Schedule") { AppCore.shared.calendarCoordinator.showSchedule() }

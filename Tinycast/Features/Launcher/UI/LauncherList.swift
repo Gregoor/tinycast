@@ -7,6 +7,7 @@ struct LauncherList: View {
     /// The flat row id the screen has selected, not an entry id: a fallback can repeat a result.
     let selectedRowID: String?
     let favoriteCount: Int
+    let suggestionCount: Int
     let showSections: Bool
     /// Changes only when the list should scroll, so mouse selection never yanks it.
     let scroll: ScrollIntent
@@ -17,6 +18,7 @@ struct LauncherList: View {
     var onCardActions: () -> Void = {}
     let onActivate: (AppEntry) -> Void
     let onActions: (AppEntry) -> Void
+    let onDropped: () -> Void
     /// The `Use "…" with` section, always last; nil when nothing is typed.
     var fallbacks: FallbackSection?
     @Environment(RunningAppsMonitor.self) private var runningApps
@@ -94,7 +96,8 @@ struct LauncherList: View {
         }
         var rows: [Row] = cardRows
         let favorites = results.prefix(favoriteCount)
-        let rest = results.dropFirst(favoriteCount)
+        let suggestions = results.dropFirst(favoriteCount).prefix(suggestionCount)
+        let rest = results.dropFirst(favoriteCount + suggestionCount)
         var grouped: [AppEntry.Kind: [AppEntry]] = [:]
         for app in rest { grouped[app.kind, default: []].append(app) }
         if !favorites.isEmpty {
@@ -103,6 +106,10 @@ struct LauncherList: View {
                 contentsOf: favorites.enumerated().map {
                     .app($1, slot: FavoriteSlots.digit(at: $0))
                 })
+        }
+        if !suggestions.isEmpty {
+            rows.append(.header("Suggestions"))
+            rows.append(contentsOf: suggestions.map { .app($0, slot: nil) })
         }
         // Publication order, so rows match the flat index.
         let kinds: [AppEntry.Kind] = [
@@ -156,7 +163,7 @@ struct LauncherList: View {
                                         slot: slot
                                     )
                                     .contentShape(Rectangle())
-                                    .onTapGesture { onActivate(app) }
+                                    .onRowTap(drag: drag(for: app)) { onActivate(app) }
                                     .onRightClick { onActions(app) }
                                     .selectionFrame(app.id == selectedRowID)
                                 case .fallback(let app, let index):
@@ -185,6 +192,14 @@ struct LauncherList: View {
                 }
             }
         }
+    }
+
+    /// Cache-only icon: the row holds its own smaller bitmap, and a decode would stall the drag.
+    private func drag(for app: AppEntry) -> RowDrag? {
+        guard app.canDragOut else { return nil }
+        return RowDrag(
+            item: { .file(app.url, image: IconCache.cached(app.iconSource, fileURL: app.url)) },
+            dropped: onDropped)
     }
 }
 

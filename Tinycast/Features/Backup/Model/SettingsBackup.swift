@@ -35,10 +35,11 @@ struct SettingsBackup: Codable {
         var appearance: String?
         var calcNumberStyle: String?
         var interfaceSize: String?
-        var paletteTransparency: Int?
         var compactMode: Bool?
         var showFavoritesInCompactMode: Bool?
         var searchScopes: [String]?
+        var launcherShowsSuggestions: Bool?
+        var rootSearchSensitivity: String?
         var openOnCursorScreen: Bool?
         // Safe to carry: it grants no permission class, just repositions the window.
         var paletteDraggable: Bool?
@@ -81,6 +82,7 @@ struct SettingsBackup: Codable {
         var menuBarEvents: Int?
         var calendarMenuBarDisplay: Int?
         var menuBarLinkedEventsOnly: Bool?
+        var calendarMenuBarHidesWhenEmpty: Bool?
         var hideCurrentEvent: Int?
         // Safe to carry: it silences a prompt rather than granting anything.
         var supportReminders: Bool?
@@ -141,10 +143,11 @@ extension SettingsBackup {
             appearance: s.appearance.rawValue,
             calcNumberStyle: s.calcNumberStyle.rawValue,
             interfaceSize: s.interfaceSize.rawValue,
-            paletteTransparency: s.paletteTransparency,
             compactMode: s.compactMode,
             showFavoritesInCompactMode: s.showFavoritesInCompactMode,
             searchScopes: s.searchScopes,
+            launcherShowsSuggestions: s.launcherShowsSuggestions,
+            rootSearchSensitivity: s.rootSearchSensitivity.rawValue,
             openOnCursorScreen: s.openOnCursorScreen,
             paletteDraggable: s.paletteDraggable,
             fileSearchEnabled: s.fileSearchEnabled,
@@ -179,6 +182,7 @@ extension SettingsBackup {
             menuBarEvents: s.menuBarEvents.rawValue,
             calendarMenuBarDisplay: s.calendarMenuBarDisplay.rawValue,
             menuBarLinkedEventsOnly: s.menuBarLinkedEventsOnly,
+            calendarMenuBarHidesWhenEmpty: s.calendarMenuBarHidesWhenEmpty,
             hideCurrentEvent: s.hideCurrentEvent.rawValue,
             supportReminders: s.supportRemindersEnabled)
 
@@ -346,10 +350,6 @@ extension SettingsBackup {
             settings.calcNumberStyle = style
             count += 1
         }
-        if let value = s.paletteTransparency, (-100...100).contains(value) {
-            settings.paletteTransparency = value
-            count += 1
-        }
         if let flag = s.compactMode {
             settings.compactMode = flag
             count += 1
@@ -360,6 +360,14 @@ extension SettingsBackup {
         }
         if let scopes = s.searchScopes {
             settings.searchScopes = SearchScopes.normalize(scopes)
+            count += 1
+        }
+        if let flag = s.launcherShowsSuggestions {
+            settings.launcherShowsSuggestions = flag
+            count += 1
+        }
+        if let raw = s.rootSearchSensitivity, let sensitivity = SearchSensitivity(rawValue: raw) {
+            settings.rootSearchSensitivity = sensitivity
             count += 1
         }
         if let flag = s.openOnCursorScreen {
@@ -501,6 +509,10 @@ extension SettingsBackup {
         }
         if let flag = s.menuBarLinkedEventsOnly {
             settings.menuBarLinkedEventsOnly = flag
+            count += 1
+        }
+        if let flag = s.calendarMenuBarHidesWhenEmpty {
+            settings.calendarMenuBarHidesWhenEmpty = flag
             count += 1
         }
         if let raw = s.hideCurrentEvent, let hide = HideCurrentEvent(rawValue: raw) {

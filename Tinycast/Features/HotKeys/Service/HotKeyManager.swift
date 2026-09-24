@@ -27,7 +27,7 @@ final class HotKeyManager {
             guard recordingAction != oldValue else { return }
             let recording = recordingAction != nil
             center.isPaused = recording
-            doubleTapMonitor.isPaused = recording
+            modifierTapMonitor.isPaused = recording
             if let recordingAction {
                 capture.start(action: recordingAction, hotKeys: self)
             } else {
@@ -36,14 +36,16 @@ final class HotKeyManager {
         }
     }
 
-    let doubleTapMonitor = DoubleTapMonitor()
+    let modifierTapMonitor = ModifierTapMonitor()
     /// Live state of the open recorder, read by its callout.
     let capture = ShortcutCaptureSession()
 
     private let center = HotKeyCenter()
-    private var doubleTaps: [DoubleTapModifier: HotKeyAction] = [:]
+    private var modifierTaps: [HotKeyBinding: HotKeyAction] = [:]
     /// Every binding, loaded once in `start()` and written through on change.
     private var bindings: [HotKeyAction: HotKeyBinding] = [:]
+    /// Part of `AppIndex`'s cache key: a bound entry leaves the launcher's Suggestions.
+    private(set) var revision = 0
     @ObservationIgnored private var candidateActionsCache: [HotKeyAction]?
     // Reused: the startup load decodes once per candidate action.
     private let decoder = JSONDecoder()
@@ -71,16 +73,17 @@ final class HotKeyManager {
         prune(key: boundQuickActionKey, live: quickActionIDs) { .quickAction(id: $0) }
         // After the prunes, so a dropped record can't survive in memory this session.
         for action in candidateActions { bindings[action] = storedBinding(for: action) }
+        revision &+= 1
 
         // `register` no-ops on an unbound item, so the fixed catalogs need no index of their own.
         for action in candidateActions { register(action) }
 
-        doubleTapMonitor.onDoubleTap = { [weak self] modifier in
-            guard let self, let action = doubleTaps[modifier] else { return }
+        modifierTapMonitor.onTrigger = { [weak self] binding in
+            guard let self, let action = modifierTaps[binding] else { return }
             perform(action)
         }
-        doubleTapMonitor.start()
-        syncDoubleTaps()
+        modifierTapMonitor.start()
+        syncModifierTaps()
     }
 
     /// Never pruned at launch: not-installed-yet and gone are indistinguishable there.
@@ -114,6 +117,15 @@ final class HotKeyManager {
     /// Pruned by `AppleShortcutCoordinator` after a successful read, never here at launch.
     var boundAppleShortcutIDs: [UUID] { boundIDs(key: boundAppleShortcutKey) }
 
+    /// A deleted app takes its Settings row with it, so nothing else could ever clear its binding.
+    func removeAppBindings(where isUninstalled: (String) -> Bool) {
+        for bundleID in boundBundleIDs where isUninstalled(bundleID) {
+            let action = HotKeyAction.app(bundleID: bundleID)
+            if recordingAction == action { recordingAction = nil }
+            setBinding(nil, for: action)
+        }
+    }
+
     func binding(for action: HotKeyAction) -> HotKeyBinding? { bindings[action] }
 
     private func storedBinding(for action: HotKeyAction) -> HotKeyBinding? {
@@ -138,6 +150,7 @@ final class HotKeyManager {
             bindings[action] = nil
             UserDefaults.standard.removeObject(forKey: action.defaultsKey)
         }
+        revision &+= 1
         // Unregister unconditionally: the previous binding may have been a combo.
         center.unregister(id: action.defaultsKey)
         register(action)
@@ -171,9 +184,9 @@ final class HotKeyManager {
             break
         }
         candidateActionsCache = nil
-        // A rebuild walks every candidate; only a double-tap entering or leaving changes the map.
-        if previous?.doubleTapModifier != nil || binding?.doubleTapModifier != nil {
-            syncDoubleTaps()
+        // A rebuild walks every candidate; only a modifier-only binding changes this map.
+        if previous?.usesModifierTapMonitor == true || binding?.usesModifierTapMonitor == true {
+            syncModifierTaps()
         }
     }
 
@@ -190,7 +203,7 @@ final class HotKeyManager {
         }
     }
 
-    /// What else holds `binding`, or nil. Whole-binding comparison covers both kinds alike.
+    /// What else holds `binding`, or nil. Whole-binding comparison covers every kind alike.
     func conflictOwner(of binding: HotKeyBinding, excluding action: HotKeyAction) -> String? {
         for candidate in candidateActions
         where candidate != action && self.binding(for: candidate) == binding {
@@ -247,7 +260,7 @@ final class HotKeyManager {
         }
     }
 
-    /// Hands a combo to Carbon; a double-tap has no per-action registration to make.
+    /// Hands a combo to Carbon; a modifier-only binding has no per-action registration.
     private func register(_ action: HotKeyAction) {
         guard let shortcut = binding(for: action)?.shortcut else { return }
         center.register(id: action.defaultsKey, shortcut: shortcut) { [weak self] in
@@ -256,13 +269,13 @@ final class HotKeyManager {
     }
 
     /// Rebuilt wholesale, so the map can't drift from what is on disk.
-    private func syncDoubleTaps() {
-        doubleTaps = [:]
+    private func syncModifierTaps() {
+        modifierTaps = [:]
         for action in candidateActions {
-            guard let modifier = binding(for: action)?.doubleTapModifier else { continue }
-            doubleTaps[modifier] = action
+            guard let binding = binding(for: action), binding.usesModifierTapMonitor else { continue }
+            modifierTaps[binding] = action
         }
-        doubleTapMonitor.update(bound: Set(doubleTaps.keys))
+        modifierTapMonitor.update(bound: Set(modifierTaps.keys))
     }
 
     private func perform(_ action: HotKeyAction) {

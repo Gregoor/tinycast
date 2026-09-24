@@ -17,15 +17,18 @@ launcher and a still-recorded shortcut for either does nothing.
   revision counter to keep superseded sweeps from publishing. `WindowInventory` made the same call.
 - **A live `AXUIElement` never leaves the main actor, and never outlives the show.** The pure entry
   carries a `handle`; `WindowSwitchSession` holds the `handle → Element` table `@ObservationIgnored`
-  and drops it in `reset()`, which `hidePalette` and every mode change call.
+  and drops it in `reset()`, which `hidePalette` and every mode change call. So every open sweeps
+  anew — `WindowSwitchCoordinator.load()`, through `PaletteCoordinator.onScreenOpening` — and a
+  screen restored inside the Pop to Root window lists today's windows, not an empty snapshot.
 - **Nothing in `Model/` knows what a window is.** `WindowSwitchEntry` takes `appRank` as a number
   someone else measured, so `WindowSwitchOrder` and `WindowSwitchQuery` stay Foundation-only and the
   harness compiles the shipped sources.
 - **The order is total.** `(isMinimized, appRank, appName, handle)` — so a sweep that enumerated apps
   in a different order sorts identically, and minimized windows are always one run at the end rather
   than interleaved.
-- **Accessibility is gated twice**, on show and again on activate: a grant revoked while the palette
-  is open must not reach `AXUIElementPerformAction`.
+- **Accessibility is gated twice**, on open and again on activate: a grant revoked while the palette
+  is open must not reach `AXUIElementPerformAction`. The open gate sits in both `show()` and
+  `load()`, because a restore reaches `load()` alone.
 - **Activation hides with `restoreFocus: false`.** Restoring focus reactivates the displaced app,
   which races the raise and can land on the wrong window — the same reason a Space command does it.
 - **`AXWindowAccess` stays the one AX window layer.** `unminimize` and `focus` live there rather

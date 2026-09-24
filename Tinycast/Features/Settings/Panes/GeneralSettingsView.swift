@@ -79,11 +79,7 @@ struct GeneralSettingsView: View {
                     SettingsRowTitle(.generalAppearance, "Theme")
                 }
                 InterfaceSizeRow()
-                PaletteTransparencyRow()
-                Toggle(isOn: $settings.compactMode) {
-                    SettingsRowTitle(.generalAppearance, "Compact mode")
-                    Text("A slim search bar that expands as you type.")
-                }
+                WindowModeRow()
                 Toggle(isOn: $settings.showFavoritesInCompactMode) {
                     SettingsRowTitle(.generalAppearance, "Show favorites in compact mode")
                     Text("Launch them with ⌘1–⌘5.")
@@ -164,6 +160,18 @@ struct GeneralSettingsView: View {
             }
 
             Section {
+                Toggle(isOn: $settings.launcherShowsSuggestions) {
+                    SettingsRowTitle(.generalSearch, "Show suggestions")
+                    Text("What you open most, while the search field is empty.")
+                }
+                Picker(selection: $settings.rootSearchSensitivity) {
+                    ForEach(SearchSensitivity.allCases) { sensitivity in
+                        Text(sensitivity.title).tag(sensitivity)
+                    }
+                } label: {
+                    SettingsRowTitle(.generalSearch, "Search sensitivity")
+                    Text("Lower finds names from scattered letters.")
+                }
                 LabeledContent {
                     Button("Reset…", role: .destructive) {
                         confirmingRankingReset = true
@@ -205,6 +213,75 @@ struct GeneralSettingsView: View {
     }
 }
 
+private struct WindowModeRow: View {
+    @Environment(AppSettings.self) private var settings
+
+    private static let preview = CGSize(width: 135, height: 80)
+
+    var body: some View {
+        SettingsRow(
+            title: "Window mode", subtitle: "Choose how the launcher opens.",
+            subtitleLineLimit: 2, alignment: .top, anchor: .generalAppearance
+        ) {
+            HStack(spacing: Theme.Spacing.md) {
+                option("Compact", image: "WindowModeCompact", compact: true)
+                option("Expanded", image: "WindowModeExpanded", compact: false)
+            }
+        }
+    }
+
+    private func option(_ title: String, image: String, compact: Bool) -> some View {
+        let selected = settings.compactMode == compact
+        return Button {
+            settings.compactMode = compact
+        } label: {
+            VStack(spacing: Theme.Spacing.xs) {
+                Image(image)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: Self.preview.width, height: Self.preview.height)
+                    .clipShape(
+                        RoundedRectangle(cornerRadius: Theme.Radius.barControl, style: .continuous)
+                    )
+                    .saturation(selected ? 1 : 0)
+                Text(title)
+                    .font(.caption)
+                    .fontWeight(selected ? .semibold : .regular)
+                    .foregroundStyle(selected ? Color.primary : Color.secondary)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(WindowModeButtonStyle())
+        .accessibilityLabel(title)
+        .accessibilityAddTraits(selected ? [.isSelected] : [])
+    }
+}
+
+private struct WindowModeButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        PressedLabel(configuration: configuration)
+    }
+
+    private struct PressedLabel: View {
+        let configuration: ButtonStyle.Configuration
+        @State private var showsPressed = false
+
+        var body: some View {
+            configuration.label
+                .opacity(showsPressed ? 0.7 : 1)
+                .task(id: configuration.isPressed) {
+                    if configuration.isPressed {
+                        try? await Task.sleep(for: .milliseconds(20))
+                        guard !Task.isCancelled else { return }
+                        showsPressed = true
+                    } else {
+                        showsPressed = false
+                    }
+                }
+        }
+    }
+}
+
 /// Three glyph steps read as a legend; a true-to-scale "Aa" would look identical at 1.1.
 private struct InterfaceSizeRow: View {
     @Environment(AppSettings.self) private var settings
@@ -236,7 +313,7 @@ private struct InterfaceSizeRow: View {
             Text("Aa")
                 .font(.system(size: Self.glyph[size] ?? 13, weight: .medium))
                 .foregroundStyle(selected ? Color.primary : Color.secondary)
-                .frame(width: Theme.Size.interfaceSizeSegment, height: Theme.Size.settingsSearchField)
+                .frame(width: Theme.Size.interfaceSizeSegment, height: Theme.Size.settingsControlHeight)
                 // Without this only the glyphs take the click, not the segment around them.
                 .contentShape(shape)
                 .background(shape.fill(selected ? Theme.Colors.controlSurface : Color.clear))
@@ -245,50 +322,5 @@ private struct InterfaceSizeRow: View {
         .accessibilityLabel(size.title)
         .accessibilityAddTraits(selected ? [.isSelected] : [])
         .help(size.title)
-    }
-}
-
-private struct PaletteTransparencyRow: View {
-    @Environment(AppSettings.self) private var settings
-    @State private var draft: Double?
-    @State private var isEditing = false
-
-    private var value: Binding<Double> {
-        Binding(
-            get: { draft ?? Double(settings.paletteTransparency) },
-            set: { value in
-                if isEditing {
-                    draft = value
-                } else {
-                    settings.paletteTransparency = Int(value)
-                }
-            })
-    }
-
-    var body: some View {
-        SettingsRow(title: "Background transparency", anchor: .generalAppearance) {
-            Slider(
-                value: value, in: -100...100, step: 50, neutralValue: 0,
-                label: { EmptyView() },
-                minimumValueLabel: { Text("Less") },
-                maximumValueLabel: { Text("More") },
-                tick: { SliderTick($0) },
-                onEditingChanged: { editing in
-                    isEditing = editing
-                    if !editing, let draft {
-                        settings.paletteTransparency = Int(draft)
-                        self.draft = nil
-                    }
-                }
-            )
-            .labelsHidden()
-            .accessibilityLabel("Background transparency")
-            .frame(width: Theme.Size.paletteTransparencySlider)
-            Button("Reset") {
-                draft = nil
-                settings.paletteTransparency = 0
-            }
-            .help("Restore the default background in Light and Dark.")
-        }
     }
 }

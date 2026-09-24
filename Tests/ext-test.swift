@@ -197,6 +197,9 @@ struct ExtensionTests {
         await searchAccessoryRuntimeChecks()
         await nodeContractChecks()
         await asyncComponentChecks()
+        await menuBarRuntimeChecks()
+        await menuBarHostChecks()
+        await ExtensionFetchTests.runChecks()
 
         print("\n\(passes) passed, \(failures) failed")
         exit(failures == 0 ? 0 : 1)
@@ -252,6 +255,59 @@ struct ExtensionTests {
                 && loadAverages?.allSatisfy { $0.doubleValue.isFinite && $0.doubleValue >= 0 } == true)
     }
 
+    @MainActor
+    static func menuBarRuntimeChecks() async {
+        for (value, expected) in [("10m", 600.0), ("1h", 3600), ("1d", 86400), ("30s", 30), ("1s", 10)] {
+            check("interval \(value)", ExtensionRefreshPolicy.parse(value, floor: 10) == expected)
+        }
+        for value in ["", "0m", "-1m", "NaNm", "Infinityh", "1e308d", "5x"] {
+            check("reject interval \(value)", ExtensionRefreshPolicy.parse(value, floor: 10) == nil)
+        }
+        let (runtime, _, recorder) = makeRuntime()
+        defer { runtime.shutdown() }
+        try? await runtime.boot(config: .current(supportDirectory: FileManager.default.temporaryDirectory))
+        var context = launchContext(mode: .menuBar)
+        context.launchType = .background
+        context.launchContext = ["source": .string("fixture")]
+        let code = #"""
+            const React = require("react");
+            const { MenuBarExtra, environment } = require("@raycast/api");
+            module.exports.default = function(props) {
+              const [title, setTitle] = React.useState(props.launchType + "|" + environment.launchType);
+              return React.createElement(MenuBarExtra, { title, tooltip: props.launchContext.source },
+                React.createElement(MenuBarExtra.Item, { title: "Refresh", onAction: async (event) => {
+                  await new Promise(resolve => setTimeout(resolve, 40));
+                  setTitle(event.type);
+                }, alternate: React.createElement(MenuBarExtra.Item, { title: "Alternate", onAction() {} }) }));
+            };
+            """#
+        await runtime.start(
+            session: "bar", code: code, file: URL(fileURLWithPath: "/tmp/menu.js"),
+            mode: .menuBar, context: context)
+        await settle()
+        let root = recorder.trees.last?.activeRoot
+        check("menu-bar renders in JavaScriptCore", root?.type == "MenuBarExtra", recorder.failures.joined())
+        check(
+            "background launch reaches props and environment",
+            root?.string("title") == "background|background")
+        check("launch context reaches props", root?.string("tooltip") == "fixture")
+        check(
+            "alternate survives serialization",
+            root?.children.first?.node("alternate")?.handler("onAction") != nil)
+        if let handler = root?.children.first?.handler("onAction") {
+            await runtime.dispatch(
+                session: "bar", handler: handler, payload: #"[{"type":"right-click"}]"#,
+                completesSession: true)
+            check("menu action does not finish before its promise", !recorder.finished)
+            await settle()
+            check("menu action finishes after its promise", recorder.finished)
+            check(
+                "menu action forwards event",
+                recorder.trees.last?.activeRoot?.string("title") == "right-click")
+        }
+        await runtime.stop(session: "bar")
+    }
+
     static func manifestChecks() {
         let json: [String: Any] = [
             "name": "demo", "title": "Demo", "description": "d", "author": "a",
@@ -294,8 +350,7 @@ struct ExtensionTests {
         check("commands", manifest.commands.count == 4, "\(manifest.commands.count)")
         check("view mode", manifest.commands[0].mode == .view)
         check("no-view mode", manifest.commands[1].mode == .noView)
-        check("menu-bar is unsupported", manifest.commands[2].mode.isSupported == false)
-        check("menu-bar explains itself", manifest.commands[2].mode.unsupportedReason != nil)
+        check("menu-bar mode", manifest.commands[2].mode == .menuBar)
         // Extensions branch on `environment.appearance`, so the host must not report a fixed one.
         check(
             "a dark host reports dark",
@@ -1632,13 +1687,18 @@ struct ExtensionTests {
             print("Not an extension: \(directory.path)")
             exit(1)
         }
-        let runnable = manifest.commands.filter { $0.mode.isSupported }
+        let runnable = manifest.commands
         guard
             let target = commandName.flatMap({ name in runnable.first { $0.name == name } })
                 ?? runnable.first
         else {
             print("No runnable command in \(manifest.title)")
             exit(1)
+        }
+        if target.mode == .menuBar, ProcessInfo.processInfo.environment["EXT_TEST_MENU_BAR"] != nil {
+            await runInstalledMenuBar(
+                InstalledExtension(manifest: manifest, directory: directory), command: target)
+            exit(failures == 0 ? 0 : 1)
         }
         let bundle = directory.appendingPathComponent("\(target.name).js")
         guard let code = try? String(contentsOf: bundle, encoding: .utf8) else {

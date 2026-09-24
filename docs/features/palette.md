@@ -53,21 +53,6 @@ The command palette is a borderless floating `NSPanel` hosting SwiftUI; see
 Everything resolved "once per summon" is resolved there deliberately, not per render. `AppCore` holds
 only the closure wiring; the behaviour is `PaletteCoordinator`'s.
 
-## Background transparency
-
-General settings' **Background transparency** slider adjusts the palette's existing tint over the
-system blur, with five detents at -100, -50, 0, 50, and 100. Its center and Reset both use
-`paletteTransparency = 0`, which returns the original
-`panelScrim` token unchanged in Light and Dark. Negative values make the tint more opaque; positive
-values make it more transparent. The setting is saved when a drag ends and on keyboard adjustments.
-`PaletteBackground` observes it separately from the result list, and keeps the existing blur view.
-Custom detents add a faint white border, one physical pixel wide. The two more transparent Dark
-detents use a one-point white gradient border, brightest at the top with softer sides and a faint
-lower reflection. They disable the system window shadow, which also draws a black outline outside
-the content.
-The existing window reader supplies the panel to `PaletteBackground`; appearance and transparency
-changes update its shadow. The center keeps the original shadow and adds no border.
-
 ## Screens
 
 `PaletteState` (mode / query / selection / `focusToken`) is the bridge between the panel and the app.
@@ -81,7 +66,7 @@ palette returns to the launcher *and* chat starts a new conversation, at once or
 unfinished chat is a thing being done, exactly like a typed query, so the screen and the conversation
 are reset together rather than the screen alone. A reply still streaming is the one exception — it was
 asked for, and resetting would throw the answer away. Nothing is lost either way: a conversation is
-written to Chat History as soon as it has a message.
+written to Chat History, and the AI Chat window's sidebar, as soon as it has a message.
 
 Each `PaletteMode` maps to one type conforming to `PaletteScreen`, and the protocol is what keeps the
 selection invariant honest: a screen exposes `rows` as its single source of visible order, and the
@@ -156,13 +141,13 @@ pops, a root one closes — so `backHelp` says which, rather than promising a st
 a close. It lights to `textPrimary` under the pointer over `Theme.Duration.hover`, and
 `HeaderBackButton` keeps that hover state to itself so the header around it never re-renders.
 
-The launcher advertises the first hop in the header — `AI Chat` beside a `⇥` cap, the footer's own
-pairing of a label with its key. It is drawn only when Tab really would open chat, a condition read
+The launcher advertises the first hop in the header — `Quick AI` beside a `⇥` cap, the footer's own
+pairing of a label with its key. It is drawn only when Tab really would open Quick AI, a condition read
 back out of `PaletteTabAction` rather than restated, so a hint can never promise a destination the
 key does not go to: an argument field to walk takes Tab first, and the hint steps aside for it.
 
 `PaletteTabAction` decides where Tab goes *and* what happens to the typed text. The clipboard hands
-the query over, since one search narrows either list. **From the launcher, Tab `.ask`s** — chat opens
+the query over, since one search narrows either list. **From the launcher, Tab `.ask`s** — Quick AI opens
 fresh with the typed text already sent, so one key turns a search into a question. Leaving chat is
 still a `.freshScreen`: that field holds a half-written message rather than a query, and a draft
 dropped into a filter matches nothing. `.ask` is its own case rather than a `carryQuery(.ai)` because
@@ -188,7 +173,8 @@ these invariants:
 - The search field sits at **one structural position, always**. It is never moved inside an `if`:
   flipping the branch tears down its field editor, which drops first responder mid-navigation. Only
   its *width* changes — it is sized to its own text so the chips sit right after it, as they do in
-  Raycast.
+  Raycast. That width is a ceiling rather than a size, and the spacer after the strip is given room
+  last, so a long query is squeezed before the strip can run into the screen's own header controls.
 - **`Placement` is what a strip does to the field beside it.** `.afterQuery` (root search) drops the
   prompt and squeezes the field to the typed text, so the chips follow what was typed and a glyph
   anchors them to the row. `.besideSearchField` (a screen of its own, where that row is already

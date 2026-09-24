@@ -1,21 +1,9 @@
 import Foundation
 
-/// Only `view` and `noView` run; the rest are recognised so the launcher can explain them.
 enum ExtensionCommandMode: String, Sendable, Codable {
     case view
     case noView = "no-view"
     case menuBar = "menu-bar"
-
-    /// The string the JS runtime expects (it only distinguishes mounted from headless).
-    var runtimeName: String { self == .view ? "view" : "no-view" }
-
-    var isSupported: Bool { self != .menuBar }
-
-    var unsupportedReason: String? {
-        self == .menuBar
-            ? "Menu bar commands aren't supported yet — Tinycast only runs view and no-view commands."
-            : nil
-    }
 }
 
 /// One entry from a manifest's `preferences` array.
@@ -193,7 +181,10 @@ struct ExtensionCommand: Sendable, Hashable, Identifiable {
         description = dict["description"] as? String ?? ""
         mode = ExtensionCommandMode(rawValue: dict["mode"] as? String ?? "view") ?? .view
         intervalRaw = dict["interval"] as? String
-        interval = ExtensionRefreshPolicy.parse(intervalRaw)
+        interval = ExtensionRefreshPolicy.parse(
+            intervalRaw,
+            floor: mode == .menuBar
+                ? ExtensionRefreshPolicy.menuBarMinimumInterval : ExtensionRefreshPolicy.minimumInterval)
         keywords = dict["keywords"] as? [String] ?? []
         icon = dict["icon"] as? String
         disabledByDefault = dict["disabledByDefault"] as? Bool ?? false

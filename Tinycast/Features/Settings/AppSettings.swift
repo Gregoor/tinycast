@@ -5,6 +5,7 @@ enum SettingsKey {
     /// The launcher icon's visibility — read by its `MenuBarExtra` and the General toggle.
     static let showInMenuBar = "showInMenuBar"
     static let calendarMenuBarDisplay = "calendarMenuBarDisplay"
+    static let calendarMenuBarHidesWhenEmpty = "calendarMenuBarHidesWhenEmpty"
 }
 
 /// Delay before a closed palette pops to root; an unset key reads as `.immediately`.
@@ -123,6 +124,19 @@ final class AppSettings {
         didSet { defaults.set(searchScopes, forKey: Key.searchScopes.rawValue) }
     }
 
+    var launcherShowsSuggestions: Bool {
+        didSet {
+            defaults.set(launcherShowsSuggestions, forKey: Key.launcherShowsSuggestions.rawValue)
+        }
+    }
+
+    /// How loose a fuzzy root-search hit may be and still show.
+    var rootSearchSensitivity: SearchSensitivity {
+        didSet {
+            defaults.set(rootSearchSensitivity.rawValue, forKey: Key.rootSearchSensitivity.rawValue)
+        }
+    }
+
     /// Ships on, unlike every other feature switch: a launcher is expected to keep history.
     var clipboardEnabled: Bool {
         didSet { defaults.set(clipboardEnabled, forKey: Key.clipboardEnabled.rawValue) }
@@ -143,7 +157,7 @@ final class AppSettings {
         didSet { defaults.set(clipboardDisabledApps, forKey: Key.clipboardDisabledApps.rawValue) }
     }
 
-    /// What ↵ does on a clipboard entry; ⌘↵ always does the other one.
+    /// What ↵ does on a clipboard entry; Paste takes the chord the chosen action leaves free.
     var clipboardDefaultAction: ClipboardDefaultAction {
         didSet {
             defaults.set(
@@ -204,10 +218,6 @@ final class AppSettings {
     /// Scales the palette and its floating siblings only. Read through `InterfaceSize.metrics`.
     var interfaceSize: InterfaceSize {
         didSet { defaults.set(interfaceSize.rawValue, forKey: Key.interfaceSize.rawValue) }
-    }
-
-    var paletteTransparency: Int {
-        didSet { defaults.set(paletteTransparency, forKey: Key.paletteTransparency.rawValue) }
     }
 
     /// Summon the launcher as a slim search bar that expands into the full list on typing.
@@ -445,6 +455,13 @@ final class AppSettings {
         }
     }
 
+    var calendarMenuBarHidesWhenEmpty: Bool {
+        didSet {
+            defaults.set(
+                calendarMenuBarHidesWhenEmpty, forKey: Key.calendarMenuBarHidesWhenEmpty.rawValue)
+        }
+    }
+
     var hideCurrentEvent: HideCurrentEvent {
         didSet { defaults.set(hideCurrentEvent.rawValue, forKey: Key.hideCurrentEvent.rawValue) }
     }
@@ -574,7 +591,6 @@ final class AppSettings {
         interfaceSize =
             defaults.string(forKey: Key.interfaceSize.rawValue).flatMap(InterfaceSize.init)
             ?? .standard
-        paletteTransparency = max(-100, min(100, defaults.integer(forKey: Key.paletteTransparency.rawValue)))
         compactMode = defaults.bool(forKey: Key.compactMode.rawValue)
         // Defaults to true, so absence must be distinguished from a stored `false`.
         showFavoritesInCompactMode =
@@ -583,6 +599,13 @@ final class AppSettings {
         // Unset seeds the defaults; a stored empty array is a deliberately cleared list.
         searchScopes =
             defaults.stringArray(forKey: Key.searchScopes.rawValue) ?? SearchScopes.defaults
+        launcherShowsSuggestions =
+            defaults.object(forKey: Key.launcherShowsSuggestions.rawValue) == nil
+            || defaults.bool(forKey: Key.launcherShowsSuggestions.rawValue)
+        // High by default: it keeps letter soup out of the results.
+        rootSearchSensitivity =
+            defaults.string(forKey: Key.rootSearchSensitivity.rawValue)
+            .flatMap(SearchSensitivity.init) ?? .high
         openOnCursorScreen =
             defaults.object(forKey: Key.openOnCursorScreen.rawValue) == nil
             || defaults.bool(forKey: Key.openOnCursorScreen.rawValue)
@@ -661,6 +684,8 @@ final class AppSettings {
         menuBarLinkedEventsOnly =
             defaults.object(forKey: Key.menuBarLinkedEventsOnly.rawValue) == nil
             || defaults.bool(forKey: Key.menuBarLinkedEventsOnly.rawValue)
+        calendarMenuBarHidesWhenEmpty =
+            defaults.bool(forKey: Key.calendarMenuBarHidesWhenEmpty.rawValue)
         hideCurrentEvent =
             defaults.object(forKey: Key.hideCurrentEvent.rawValue)
             .flatMap { $0 as? Int }

@@ -989,6 +989,20 @@ struct CalcTests {
         expectDisplayAt("9:30am in nyc", "5:30 AM")
         expectDisplayAt("5pm in tokyo", "2:00 AM (tomorrow)")
         expectBadgesAt("5pm london in sf", source: "London", target: "Los Angeles")
+        // The locale's hour cycle, which the 24-hour switch overrides, picks the clock
+        var hour24 = clock.calendar
+        hour24.locale = Locale(identifier: "en_US@hours=h23")
+        var britain = clock.calendar
+        britain.locale = Locale(identifier: "en_GB")
+        var britain12 = clock.calendar
+        britain12.locale = Locale(identifier: "en_GB@hours=h12")
+        expectDisplayAt("time in tokyo", "09:18", calendar: hour24)
+        expectDisplayAt("5pm in tokyo", "02:00 (tomorrow)", calendar: hour24)
+        expectDisplayAt("unix -1", "31 December, 1969 at 23:59:59", calendar: hour24)
+        expectDisplayAt("now + 90 min", "24 July at 01:48", calendar: hour24)
+        expectDisplayAt("time in sf", "17:18 (yesterday)", calendar: britain)
+        expectBadgesAt("hrs till 9am", source: "00:18", target: "09:00", calendar: britain)
+        expectDisplayAt("time in sf", "5:18 pm (yesterday)", calendar: britain12)
 
         let zoneNow = clock.calendar.date(
             from: DateComponents(year: 2026, month: 9, day: 15, hour: 12))!

@@ -29,6 +29,8 @@ final class AppCore {
     let inputSourceSwitcher = InputSourceSwitcher()
     let settings: AppSettings
     @ObservationIgnored private var appearanceObservation: NSKeyValueObservation?
+    /// The last verdict `trackChatRoute` acted on; nil until it has read one.
+    @ObservationIgnored private var chatsRunTheirOwnTools: Bool?
     @ObservationIgnored private let iconStyle = IconStyleMonitor()
     let favorites = FavoritesStore()
     let visibility = VisibilityStore()
@@ -55,11 +57,12 @@ final class AppCore {
     let notesStore: NotesStore
     let extensions: ExtensionManager
     let chatHistory: ChatHistoryStore
-    let aiChat: AIChatState
+    let aiChats: AIChatSurfacesState
     let aiSettings = AISettingsStore(
         isAppleIntelligenceAvailable: { AppleIntelligenceProvider.status().isAvailable })
     let mcpSettings = MCPSettingsStore()
-    let mcp = MCPServerManager()
+    let mcpOAuth = MCPOAuthManager()
+    @ObservationIgnored private(set) lazy var mcp = MCPServerManager(oauth: mcpOAuth)
     let quickActionSettings = QuickActionSettingsStore()
     let customQuickActions = CustomQuickActionStore()
     let chatGPTSubscription = ChatGPTSubscriptionManager()
@@ -191,10 +194,14 @@ final class AppCore {
         paletteCoordinator: paletteCoordinator, core: self)
     @ObservationIgnored private(set) lazy var mcpCoordinator = MCPCoordinator(
         settings: settings, store: mcpSettings, manager: mcp, core: self)
+    /// Its own window and lifecycle, like Settings; Quick AI is the palette's half of the feature.
     @ObservationIgnored private(set) lazy var aiChatCoordinator = AIChatCoordinator(
-        chat: aiChat, settings: settings, appIndex: appIndex, palette: palette,
+        chats: aiChats, settings: settings, appIndex: appIndex,
         paletteCoordinator: paletteCoordinator, settingsCoordinator: settingsCoordinator,
         core: self)
+    @ObservationIgnored private(set) lazy var quickAICoordinator = QuickAICoordinator(
+        chats: aiChats, settings: settings, palette: palette,
+        paletteCoordinator: paletteCoordinator, core: self)
 
     @ObservationIgnored private lazy var windowController = PaletteWindowController(core: self)
     @ObservationIgnored private lazy var messageHUD = MessageHUDController(settings: settings)
@@ -217,7 +224,7 @@ final class AppCore {
         self.settings = settings
         self.chatHistory = chatHistory
         supportReminders = SupportReminderStore(settings: settings)
-        aiChat = AIChatState(history: chatHistory)
+        aiChats = AIChatSurfacesState(history: chatHistory)
         appIndex = AppIndex(ranking: launcherRanking, aliases: aliases)
         let clipboardManager = ClipboardManager(store: clipboardStore, settings: settings)
         self.clipboardManager = clipboardManager
@@ -252,7 +259,8 @@ final class AppCore {
             // index ranker as the "core" half.
             rootSearchProviders.setCore { query in
                 self.appIndex.orderedResults(
-                    query: query, visibility: self.visibility, favorites: self.favorites)
+                    query: query, visibility: self.visibility, favorites: self.favorites,
+                    hotKeys: self.hotKeys)
             }
             // The real movie provider: a resident JS session loading the movie bundle.
             let bundle = MovieProviderBundle.location
@@ -300,6 +308,13 @@ final class AppCore {
             paletteCoordinator.onLauncherShown = { [weak self] in
                 self?.appleShortcutCoordinator.refresh()
             }
+            paletteCoordinator.onScreenOpening = { [weak self] mode in
+                switch mode {
+                case .menuSearch: self?.menuSearchCoordinator.load()
+                case .switchWindows: self?.windowSwitchCoordinator.load()
+                default: break
+                }
+            }
             updateCoordinator.applyEnabled()
             calendarCoordinator.applyEnabled()
             Task { await appIndex.refresh() }
@@ -313,7 +328,7 @@ final class AppCore {
             supportReminders.start()
 
             hyperKeyTap.healthTicker = healthTicker
-            hotKeys.doubleTapMonitor.healthTicker = healthTicker
+            hotKeys.modifierTapMonitor.healthTicker = healthTicker
             snippetListener.healthTicker = healthTicker
 
             hotKeys.onTogglePalette = { [weak self] in self?.paletteCoordinator.togglePalette() }
@@ -347,6 +362,10 @@ final class AppCore {
             }
             extensions.onDidUninstall = { [weak self] entryIDs in
                 self?.extensionCoordinator.removeExtensionReferences(entryIDs: entryIDs)
+            }
+            appIndex.onScan = { [weak self] in
+                guard let self else { return }
+                hotKeys.removeAppBindings(where: appIndex.isUninstalled)
             }
             hotKeys.displayName = { [weak self] action in self?.hotKeyDisplayName(for: action) }
             hotKeys.allowsAction = { [weak self] action in
@@ -397,6 +416,7 @@ final class AppCore {
     /// Clicking the Dock icon: raise whichever window is already open, else summon the launcher.
     func handleReopen() {
         if settingsCoordinator.focusExisting() { return }
+        if aiChatCoordinator.focusExisting() { return }
         if onboardingCoordinator.focusExisting() { return }
         if updateCoordinator.focusExisting() { return }
         if supportCoordinator.focusExisting() { return }
@@ -489,8 +509,9 @@ final class AppCore {
         textInjector.prepareForTermination()
         snippetListener.stop()
         snippetsStore.stop()
-        aiChat.cancel()
+        aiChats.reset()
         chatGPTSubscription.stop()
+        mcpOAuth.stop()
         mcp.stop()
         installedAI.stop()
     }
@@ -511,11 +532,6 @@ final class AppCore {
         }
         tasks.append(installedAI.ensure(enabledKinds: enabledKinds))
         return Task { for task in tasks { await task.value } }
-    }
-
-    func aiProvider() throws -> any AIProvider {
-        try AIProviderFactory.make(
-            settings: aiSettings, subscription: chatGPTSubscription, installedAI: installedAI)
     }
 
     /// Permissive guardrails: the text transformed is the reader's own, which `.default` refuses.
@@ -598,6 +614,8 @@ final class AppCore {
                 _ = $0.autoJoinMeetings
                 _ = $0.menuBarEvents
                 _ = $0.calendarMenuBarDisplay
+                _ = $0.menuBarLinkedEventsOnly
+                _ = $0.hideCurrentEvent
             }, reproject: { $0.calendarCoordinator.applyClock() })
         track(
             {
@@ -612,6 +630,7 @@ final class AppCore {
             reproject: { $0.snippetCoordinator.applySnippetsLauncherPresence() })
         track({ _ = $0.appearance }, reproject: { $0.applyAppearance() })
         track({ _ = $0.interfaceSize }, reproject: { $0.windowController.applyInterfaceSize() })
+        trackChatRoute()
     }
 
     /// `.system` resolves to `nil`, so AppKit follows macOS with nothing polling.
@@ -641,6 +660,19 @@ final class AppCore {
                 reproject(self)
             }
         }
+    }
+
+    /// A chat route that runs its own MCP client decides which servers Tinycast runs itself.
+    private func trackChatRoute() {
+        let runsOwnTools = withObservationTracking {
+            aiChatCoordinator.everyChatRunsItsOwnTools
+        } onChange: { [weak self] in
+            Task { @MainActor in self?.trackChatRoute() }
+        }
+        // Re-read on every streaming flush, so only a changed verdict reaches the servers.
+        defer { chatsRunTheirOwnTools = runsOwnTools }
+        guard let previous = chatsRunTheirOwnTools, previous != runsOwnTools else { return }
+        mcpCoordinator.applyEnabled()
     }
 
     /// Without a Hyper key the chord means nothing, so a literal ⌃⌥⌘ combo is left as recorded.

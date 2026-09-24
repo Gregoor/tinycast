@@ -18,10 +18,11 @@ enum SettingsBackupCoverage {
         "appearance": .appearance,
         "calcNumberStyle": .calcNumberStyle,
         "interfaceSize": .interfaceSize,
-        "paletteTransparency": .paletteTransparency,
         "compactMode": .compactMode,
         "showFavoritesInCompactMode": .showFavoritesInCompactMode,
         "searchScopes": .searchScopes,
+        "launcherShowsSuggestions": .launcherShowsSuggestions,
+        "rootSearchSensitivity": .rootSearchSensitivity,
         "openOnCursorScreen": .openOnCursorScreen,
         "paletteDraggable": .paletteDraggable,
         "fileSearchEnabled": .fileSearchEnabled,
@@ -56,6 +57,7 @@ enum SettingsBackupCoverage {
         "menuBarEvents": .menuBarEvents,
         "calendarMenuBarDisplay": .calendarMenuBarDisplay,
         "menuBarLinkedEventsOnly": .menuBarLinkedEventsOnly,
+        "calendarMenuBarHidesWhenEmpty": .calendarMenuBarHidesWhenEmpty,
         "hideCurrentEvent": .hideCurrentEvent,
         "supportReminders": .supportReminders
     ]
@@ -120,6 +122,9 @@ enum SettingsBackupCoverage {
         AppSettingsKey.aiNewChatAfter.rawValue:
             "Paces the same decision as the setting it accompanies, against conversations that stay "
             + "on the Mac that had them.",
+        AppSettingsKey.aiToolRounds.rawValue:
+            "Decides how much a tool-driven reply may spend on this Mac's own connections; no other "
+            + "AI setting travels, and an import must not raise a spending limit unasked.",
         AppSettingsKey.mcpEnabled.rawValue:
             "Doubles as consent to run third-party MCP servers, one of which is a local process; a "
             + "flag that grants a capability is never carried by a backup.",

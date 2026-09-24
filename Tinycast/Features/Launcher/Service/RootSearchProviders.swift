@@ -86,7 +86,7 @@ final class RootSearchProviders {
     /// The query currently settling; the previous frame is held for it (no flash).
     private var pendingQuery: String = ""
     /// The settled frame: core results blended with providers' candidates, replaced only on settle.
-    private var lastFrame: [AppEntry] = []
+    private var lastResults = AppIndex.Results()
     /// Bumped on settle, so the palette re-runs `LauncherScreen`.
     var candidatesRevision = 0
     /// In-flight refresh, cancelled by a new keystroke.
@@ -95,7 +95,7 @@ final class RootSearchProviders {
     private var providers: [RootSearchProvider] = []
     /// Ranks the native index for a query; wired by `AppCore`. `@ObservationIgnored` so mutation
     /// here never counts as a view dependency.
-    @ObservationIgnored private var coreFor: (String) -> [AppEntry] = { _ in [] }  // placeholder
+    @ObservationIgnored private var coreFor: (String) -> AppIndex.Results = { _ in AppIndex.Results() }
 
     init(
         minimumQueryLength: Int = 2, resultCap: Int = 10, settleMs: Int = 100
@@ -133,19 +133,19 @@ final class RootSearchProviders {
     }
 
     /// Wired by `AppCore`: ranks the native index for `query`, the "core" half of the frame.
-    func setCore(_ coreFor: @escaping (String) -> [AppEntry]) {
+    func setCore(_ coreFor: @escaping (String) -> AppIndex.Results) {
         self.coreFor = coreFor
     }
 
-    /// The settled root-search frame for `query` — core results blended with providers' async
-    /// candidates. PURE READ: never mutates this `@Observable` object (a write would loop the SwiftUI
-    /// getter). The previous frame is held while a refresh for `query` is still settling.
-    func frame(for query: String) -> [AppEntry] {
+    /// The settled root-search frame for `query` — the core's results with the providers' async
+    /// candidates appended. PURE READ: never mutates this `@Observable` object (a write would loop the
+    /// SwiftUI getter). The previous frame is held while a refresh for `query` is still settling.
+    func results(for query: String) -> AppIndex.Results {
         let trimmed = query.trimmingCharacters(in: .whitespaces)
         // Hold the last settled frame for the query being refreshed (or the settled query), so the
         // core + async rows appear together once instead of a core-only flash.
-        guard trimmed == lastQuery || trimmed == pendingQuery else { return [] }
-        return lastFrame
+        guard trimmed == lastQuery || trimmed == pendingQuery else { return AppIndex.Results() }
+        return lastResults
     }
 
     /// Called on every root-query change (from the palette's `onChange(of: vm.query)` handler, off
@@ -165,7 +165,7 @@ final class RootSearchProviders {
             // Too short to ask any provider: settle immediately (no async rows expected).
             lastQuery = trimmed
             pendingQuery = ""
-            lastFrame = coreFor(trimmed)
+            lastResults = coreFor(trimmed)
             candidatesRevision &+= 1
         }
     }
@@ -183,15 +183,16 @@ final class RootSearchProviders {
         let core = coreFor(trimmed)
         lastQuery = trimmed
         pendingQuery = ""
-        lastFrame = Self.merge(core, async)
+        lastResults = Self.merge(core, async)
         candidatesRevision &+= 1
     }
 
-    /// Blend the native core with the providers' candidates, letting the async rows rank where they
-    /// naturally fit without pushing the core's own ordering out: core first in its ranked order, then
-    /// the async rows (which SearchRelevance already trust-bounded). Async never outranks equal core.
-    private static func merge(_ core: [AppEntry], _ async: [AppEntry]) -> [AppEntry] {
-        core + async
+    /// Append the providers' candidates to the core's results. The counts describe the core's own
+    /// leading rows and are only ever non-zero for an empty query, which is below every provider's
+    /// minimum length — so appending cannot put them out of step with `entries`.
+    private static func merge(_ core: AppIndex.Results, _ async: [AppEntry]) -> AppIndex.Results {
+        guard !async.isEmpty else { return core }
+        return AppIndex.Results(entries: core.entries + async)
     }
 
     /// Run every provider once, building transient entries; stops early past `until` (the deadline).
@@ -239,10 +240,11 @@ final class RootSearchProviders {
             {
                 entry.iconOverride = .poster(url: url)
             }
-            entry.aliases =
-                [SearchAlias.name(candidate.title)]
-                + candidate.keywords.compactMap { SearchAlias.translation($0) }
-                + [SearchAlias.owner(providerID)]
+            // A provider's keywords are the title's other spellings — an original title, a translation —
+            // which rank like the name. Never `keywords`: those are only ever found by, not ranked.
+            for alternate in candidate.keywords {
+                entry.addAlternateTitle(alternate)
+            }
             return entry
         }
     }

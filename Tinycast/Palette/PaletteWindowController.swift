@@ -12,6 +12,8 @@ final class PaletteWindowController: NSObject, NSWindowDelegate {
     private var popToRootTimer: Timer?
     // Reopen beat the timeout, so select the preserved query.
     private var queryWasPreserved = false
+    /// Set by a pop to root while hidden and spent by the next show: that screen is already fresh.
+    private(set) var isPoppedToRoot = false
     /// Resolved once per show; the top edge is the one that must not drift.
     private var anchor: CGPoint?
     /// Live only between mouse-down and mouse-up on a drag handle; nil means a move was ours.
@@ -50,6 +52,7 @@ final class PaletteWindowController: NSObject, NSWindowDelegate {
 
     func show() {
         Signposts.interval("PaletteWindowController.show") {
+            isPoppedToRoot = false
             // Summoned over one of our own windows: there is no external paste or focus target.
             let frontmost = NSWorkspace.shared.frontmostApplication
             let ownPID = NSRunningApplication.current.processIdentifier
@@ -132,8 +135,8 @@ final class PaletteWindowController: NSObject, NSWindowDelegate {
     private func attachPastedFile() -> Bool {
         let files = PasteboardFiles.urls(on: .general)
         switch core.palette.mode {
-        case .ai: return core.aiChatCoordinator.attachPastedFile(files: files)
-        case .launcher: return core.aiChatCoordinator.attachPastedFileFromLauncher(files: files)
+        case .ai: return core.quickAICoordinator.attachPastedFile(files: files)
+        case .launcher: return core.quickAICoordinator.attachPastedFileFromLauncher(files: files)
         default: return false
         }
     }
@@ -187,6 +190,7 @@ final class PaletteWindowController: NSObject, NSWindowDelegate {
     /// The screen only: a conversation is not a typed query, and `Opens To` decides its lifetime.
     private func popToRoot() {
         core.palette.prepare(mode: .launcher)
+        isPoppedToRoot = true
     }
 
     /// Skip the Pop to Root Search delay, for a close that means to reset as well as hide.
@@ -330,7 +334,7 @@ final class PaletteWindowController: NSObject, NSWindowDelegate {
                 core.extensionCoordinator.exitExtensionScreen()
                 return true
             }
-            if core.palette.mode == .ai, core.aiChatCoordinator.removeLastAttachment() {
+            if core.palette.mode == .ai, core.quickAICoordinator.removeLastAttachment() {
                 return true
             }
             if core.palette.pop() { return true }

@@ -95,7 +95,8 @@ Each one has its own switch, and all five ship off. The pane shows whether each 
 or needs you to sign in. It links to the install page and can copy the sign-in command for you.
 
 Tinycast uses them as plain chat. Claude, Grok and OpenCode run with tools, file access and shell access
-switched off. Cursor runs in Ask mode against Tinycast's private workspace: read-only exploration,
+switched off — unless you have added [MCP servers](/docs/ai/mcp), which Codex and Claude can call
+and the other three cannot. Cursor runs in Ask mode against Tinycast's private workspace: read-only exploration,
 no edits, and no MCP auto-approval. Cursor's CLI has no way to start without your MCP configuration,
 so MCP servers you have already approved in Cursor still apply on this route — the Providers pane
 says so on the Cursor row. After each reply, Tinycast deletes the chat or session that turn
@@ -133,8 +134,10 @@ Press <kbd>⌘</kbd><kbd>V</kbd> in the message box to attach what is on your cl
 - **A PDF.**
 - **A text file**, like a CSV, Markdown or source file. Its contents go into the message.
 
-Each attachment shows as a small pill beside what you type, with its own ✕. After two pills the rest
-fold into a `+N` count. <kbd>delete</kbd> in an empty message box removes the last one.
+Attachments show as one small pill after what you type: an icon for the newest, and `+2` or so for
+the rest. Hover over it to see their names, or click it to list them, each image with a small
+preview, and remove any one with its ✕.
+<kbd>delete</kbd> in an empty message box removes the last one.
 
 Not every model can take every kind. Tinycast refuses at the moment you attach, and says why, rather
 than sending something the model will never see.
@@ -163,8 +166,8 @@ instructions. Click to edit.
 
 ## Tools from MCP servers
 
-With an API connection, the model can call tools from MCP servers you add. See
-[MCP servers](/docs/ai/mcp).
+With an API connection, or with the installed Codex or Claude command, the model can call tools from
+MCP servers you add. See [MCP servers](/docs/ai/mcp).
 
 ## Privacy and storage
 

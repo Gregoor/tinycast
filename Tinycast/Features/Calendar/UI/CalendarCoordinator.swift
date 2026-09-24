@@ -2,6 +2,7 @@ import AppKit
 
 /// Owns joining a meeting: the consent gate, the card's and the chord's actions, feature presence.
 @MainActor
+@Observable
 final class CalendarCoordinator {
     private let store: CalendarStore
     private let clock: MeetingClock
@@ -12,13 +13,18 @@ final class CalendarCoordinator {
     private unowned let core: AppCore
 
     /// Its own surface, the way `NotesCoordinator` owns the notes window.
-    private lazy var cameraPreview = CameraPreviewController()
+    @ObservationIgnored private lazy var cameraPreview = CameraPreviewController()
 
-    private var paletteVisible = false
+    @ObservationIgnored private var paletteVisible = false
     /// When auto join was last armed; a meeting already under way then is never joined.
-    private var armedAt = Date.distantFuture
+    @ObservationIgnored private var armedAt = Date.distantFuture
     /// Auto joined this launch, so a meeting opens itself at most once.
-    private var autoJoined: Set<MeetingEvent.ID> = []
+    @ObservationIgnored private var autoJoined: Set<MeetingEvent.ID> = []
+
+    /// Stored and written only on a flip: the menu-bar scene reads it, and must not re-run per tick.
+    private(set) var hasMenuBarEvent = false
+    /// Dismissed from the menu bar this launch, the way `autoJoined` remembers what it opened.
+    private var dismissedFromMenuBar: Set<MeetingEvent.ID> = []
 
     init(
         store: CalendarStore,
@@ -67,7 +73,14 @@ final class CalendarCoordinator {
             hideAfterMinutes: settings.hideCurrentEvent.minutes,
             linkedOnly: settings.menuBarLinkedEventsOnly,
             hideCurrentAtStart: settings.hideCurrentEvent.hidesAtStart)
-        return summary.event(from: store.events, now: clock.now)
+        return summary.event(
+            from: store.events, now: clock.now, dismissed: dismissedFromMenuBar)
+    }
+
+    /// Dismisses what the menu drew: a handover mid-click must not eat the arriving event.
+    func dismissMenuBarEvent(_ meeting: MeetingEvent) {
+        dismissedFromMenuBar.insert(meeting.id)
+        refreshMenuBarEvent()
     }
 
     // MARK: - Feature switch
@@ -114,9 +127,13 @@ final class CalendarCoordinator {
             store.stop()
             clock.stop()
             publishEntries()
+            refreshMenuBarEvent()
             return
         }
-        store.onChange = { [weak self] in self?.publishEntries() }
+        store.onChange = { [weak self] in
+            self?.publishEntries()
+            self?.refreshMenuBarEvent()
+        }
         clock.onTick = { [weak self] in self?.minuteDidPass() }
         applySpan()
         store.start()
@@ -140,6 +157,7 @@ final class CalendarCoordinator {
             return
         }
         clock.start()
+        refreshMenuBarEvent()
     }
 
     /// Stamped when auto join goes on, so switching it on mid-call cannot yank you into that call.
@@ -155,7 +173,23 @@ final class CalendarCoordinator {
     private func minuteDidPass() {
         store.reloadIfStale(now: clock.now)
         publishEntries()
+        refreshMenuBarEvent()
         autoJoinIfDue()
+    }
+
+    private func refreshMenuBarEvent() {
+        forgetStaleDismissals()
+        let hasEvent = menuBarEvent != nil
+        guard hasEvent != hasMenuBarEvent else { return }
+        hasMenuBarEvent = hasEvent
+    }
+
+    /// Assigned only on a change: a write every tick would re-run the label for nothing.
+    private func forgetStaleDismissals() {
+        guard !dismissedFromMenuBar.isEmpty else { return }
+        let live = dismissedFromMenuBar.intersection(store.events.map(\.id))
+        guard live != dismissedFromMenuBar else { return }
+        dismissedFromMenuBar = live
     }
 
     private func autoJoinIfDue() {
@@ -190,8 +224,8 @@ final class CalendarCoordinator {
                     + (meeting.id.addingPercentEncoding(withAllowedCharacters: .alphanumerics)
                         ?? ""))!,
             bundleID: nil, kind: .meeting,
-            matchAliases: [meeting.calendarName],
-            symbolName: meeting.link?.provider.sfSymbol ?? "calendar")
+            symbolName: meeting.link?.provider.sfSymbol ?? "calendar",
+            keywords: [meeting.calendarName])
     }
 
     // MARK: - Palette lifecycle

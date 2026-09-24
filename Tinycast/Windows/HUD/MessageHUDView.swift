@@ -25,7 +25,7 @@ struct MessageHUDView: View {
         .fixedSize()
         // Not glass: with nothing to lens it falls back to an opaque backing and shows.
         .background(Theme.Colors.panelScrim)
-        .background(VisualEffectView())
+        .background(GlassEffectView())
         .clipShape(Capsule())
     }
 

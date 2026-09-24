@@ -16,6 +16,7 @@ enum ExtensionSessionState: Equatable {
 @Observable
 final class ExtensionManager: ExtensionRuntimeDelegate, ExtensionHostContext {
     private(set) var installed: [InstalledExtension] = []
+    private(set) var menuBars: ExtensionMenuBarManager?
     private(set) var state: ExtensionSessionState = .idle
     /// The command whose session is live, if any.
     private(set) var running: ExtensionCommandRef?
@@ -80,12 +81,39 @@ final class ExtensionManager: ExtensionRuntimeDelegate, ExtensionHostContext {
         guard enabled != isEnabled else { return }
         isEnabled = enabled
         guard enabled else {
+            menuBars?.stop()
+            menuBars = nil
             await stop()
             backgroundTask?.cancel()
             backgroundTask = nil
             installed = []
             appIndex?.setExtensionCommands([])
             return
+        }
+        if let coordinator {
+            menuBars = ExtensionMenuBarManager(
+                storage: storage,
+                commandMetadata: commandMetadata,
+                supportDirectory: ExtensionCatalog.supportRoot(),
+                makeExecution: { [weak self, weak coordinator] owner, command, type in
+                    guard let self, let coordinator else { return nil }
+                    let host = ExtensionMenuBarHost(
+                        owner: owner, command: command, launchType: type, storage: self.storage,
+                        manager: self, coordinator: coordinator)
+                    let bridge = self.bridge.scoped(to: host)
+                    return .init(
+                        runtime: ExtensionRuntime(
+                            hostAPI: bridge,
+                            priority: type == .background ? .utility : .userInitiated),
+                        stop: {
+                            host.stop()
+                            bridge.context = nil
+                        }, enableInteraction: { host.enableInteraction() })
+                },
+                onError: { [weak coordinator] message, owner, needsPreferences in
+                    coordinator?.showHUD(message)
+                    if needsPreferences { coordinator?.showExtensionSettings(for: owner) }
+                })
         }
         await refresh()
         ensureBackgroundLoop()
@@ -102,10 +130,13 @@ final class ExtensionManager: ExtensionRuntimeDelegate, ExtensionHostContext {
     func refresh() async {
         guard isEnabled else { return }
         let found = await Task.detached(priority: .utility) { ExtensionCatalog.scan() }.value
-        guard found != installed else { return }
-        installed = found
-        publishLauncherEntries()
-        restartBackgroundLoop()
+        guard isEnabled else { return }
+        if found != installed {
+            installed = found
+            publishLauncherEntries()
+            restartBackgroundLoop()
+        }
+        menuBars?.synchronize(found)
     }
 
     func extensionNamed(_ name: String) -> InstalledExtension? {
@@ -121,7 +152,6 @@ final class ExtensionManager: ExtensionRuntimeDelegate, ExtensionHostContext {
         return entry(for: command, in: owner)
     }
 
-    /// Menu-bar commands are listed too: activating one explains itself, which beats hiding it.
     private func publishLauncherEntries() {
         guard isEnabled, showsInLauncher else {
             appIndex?.setExtensionCommands([])
@@ -155,8 +185,9 @@ final class ExtensionManager: ExtensionRuntimeDelegate, ExtensionHostContext {
             backgroundRefresh: ExtensionRefreshPolicy.indicator(
                 schedulable: schedulable, backgroundEnabled: metadata.backgroundEnabled,
                 lastError: metadata.lastError),
+            keywords: command.keywords,
             iconOverride: icon(for: command, in: owner, appearance: appearance),
-            ownerName: owner.title)
+            ownerName: owner.title, installedAt: owner.installedAt)
     }
 
     /// Persist and re-publish, so rows change under the user rather than on the next scan.
@@ -235,6 +266,7 @@ final class ExtensionManager: ExtensionRuntimeDelegate, ExtensionHostContext {
 
     /// Takes everything keyed to it: files, storage, icon, and its shortcuts.
     func uninstall(_ installedExtension: InstalledExtension) async {
+        menuBars?.remove(extensionName: installedExtension.manifest.name)
         if running?.extensionName == installedExtension.manifest.name { await stop() }
         if backgroundRef?.extensionName == installedExtension.manifest.name {
             await abortBackgroundRun()
@@ -254,25 +286,6 @@ final class ExtensionManager: ExtensionRuntimeDelegate, ExtensionHostContext {
     }
 
     // MARK: - Running a command
-
-    enum LaunchError: LocalizedError {
-        case unknownCommand(String)
-        case unsupported(String)
-        case notBuilt(String)
-        case missingPreferences([ExtensionPreferenceSchema])
-
-        var errorDescription: String? {
-            switch self {
-            case .unknownCommand(let id): return "No installed extension provides '\(id)'."
-            case .unsupported(let reason): return reason
-            case .notBuilt(let name):
-                return "\(name) has no built bundle — reinstall the extension."
-            case .missingPreferences(let schemas):
-                let names = schemas.map(\.displayTitle).joined(separator: ", ")
-                return "This command needs its preferences set first: \(names)."
-            }
-        }
-    }
 
     /// Resolve a launcher row to a command, or nil when the row isn't an extension command.
     func resolve(_ entry: AppEntry) -> (InstalledExtension, ExtensionCommand)? {
@@ -299,7 +312,7 @@ final class ExtensionManager: ExtensionRuntimeDelegate, ExtensionHostContext {
 
     func run(_ entry: AppEntry, arguments: [String: String] = [:]) async {
         guard let (owner, command) = resolve(entry) else {
-            state = .failed(LaunchError.unknownCommand(entry.id).localizedDescription)
+            state = .failed(ExtensionLaunchError.unknownCommand(entry.id).localizedDescription)
             return
         }
         await run(owner, command: command, arguments: arguments)
@@ -307,29 +320,30 @@ final class ExtensionManager: ExtensionRuntimeDelegate, ExtensionHostContext {
 
     func run(
         _ owner: InstalledExtension, command: ExtensionCommand, arguments: [String: String] = [:],
-        fallbackText: String? = nil, launchType: ExtensionLaunchType = .userInitiated
+        fallbackText: String? = nil, launchType: ExtensionLaunchType = .userInitiated,
+        launchContext: [String: RenderValue] = [:]
     ) async {
-        await stop()
-
-        if let reason = command.mode.unsupportedReason {
-            state = .failed(reason)
-            running = ExtensionCommandRef(
-                extensionName: owner.manifest.name, commandName: command.name)
+        guard isEnabled else { return }
+        if command.mode == .menuBar || (command.mode == .noView && launchType == .background) {
+            menuBars?.run(
+                owner, command: command, arguments: arguments, type: launchType, context: launchContext)
             return
         }
+        await stop()
+        guard isEnabled else { return }
         let schemas = owner.manifest.preferences + command.preferences
         let missing = storage.missingRequiredPreferences(
             extension: owner.manifest.name, schemas: schemas)
         guard missing.isEmpty else {
             running = ExtensionCommandRef(
                 extensionName: owner.manifest.name, commandName: command.name)
-            state = .failed(LaunchError.missingPreferences(missing).localizedDescription)
+            state = .failed(ExtensionLaunchError.missingPreferences(missing).localizedDescription)
             return
         }
         guard let bundle = owner.bundleURL(for: command) else {
             running = ExtensionCommandRef(
                 extensionName: owner.manifest.name, commandName: command.name)
-            state = .failed(LaunchError.notBuilt(command.title).localizedDescription)
+            state = .failed(ExtensionLaunchError.notBuilt(command.title).localizedDescription)
             return
         }
 
@@ -363,7 +377,7 @@ final class ExtensionManager: ExtensionRuntimeDelegate, ExtensionHostContext {
             (try? String(contentsOf: bundle, encoding: .utf8)) ?? ""
         }.value
         guard !code.isEmpty else {
-            state = .failed(LaunchError.notBuilt(command.title).localizedDescription)
+            state = .failed(ExtensionLaunchError.notBuilt(command.title).localizedDescription)
             return
         }
 
@@ -372,7 +386,8 @@ final class ExtensionManager: ExtensionRuntimeDelegate, ExtensionHostContext {
         let context = makeLaunchContext(
             owner: owner, command: command, arguments: arguments, supportPath: supportPath,
             fallbackText: fallbackText,
-            launchType: command.mode == .view ? .userInitiated : launchType)
+            launchType: command.mode == .view ? .userInitiated : launchType,
+            launchContext: launchContext)
 
         await runtime.start(
             session: session, code: code, file: bundle, mode: command.mode, context: context)
@@ -380,7 +395,8 @@ final class ExtensionManager: ExtensionRuntimeDelegate, ExtensionHostContext {
 
     private func makeLaunchContext(
         owner: InstalledExtension, command: ExtensionCommand, arguments: [String: String],
-        supportPath: URL, fallbackText: String? = nil, launchType: ExtensionLaunchType
+        supportPath: URL, fallbackText: String? = nil, launchType: ExtensionLaunchType,
+        launchContext: [String: RenderValue] = [:]
     ) -> ExtensionLaunchContext {
         let schemas = owner.manifest.preferences + command.preferences
         return ExtensionLaunchContext(
@@ -396,7 +412,8 @@ final class ExtensionManager: ExtensionRuntimeDelegate, ExtensionHostContext {
             arguments: command.completeArguments(arguments),
             fallbackText: fallbackText,
             launchType: launchType,
-            isDarkAppearance: NSApp.effectiveAppearance.isDark)
+            isDarkAppearance: NSApp.effectiveAppearance.isDark,
+            launchContext: launchContext)
     }
 
     func stop() async {
@@ -432,6 +449,24 @@ final class ExtensionManager: ExtensionRuntimeDelegate, ExtensionHostContext {
         if !enabled { commandMetadata.clearBackgroundError(extension: name, command: command) }
         publishLauncherEntries()
         restartBackgroundLoop()
+    }
+
+    func menuBarIsEnabled(_ reference: ExtensionCommandRef) -> Bool {
+        commandMetadata.metadata(
+            extension: reference.extensionName, command: reference.commandName
+        ).menuBarEnabled
+    }
+
+    /// Switching one on runs it: the item it draws is whatever that run renders.
+    func setMenuBarEnabled(_ enabled: Bool, reference: ExtensionCommandRef) {
+        guard enabled else {
+            menuBars?.disable(reference.entryID)
+            return
+        }
+        guard let owner = extensionNamed(reference.extensionName),
+            let command = owner.command(named: reference.commandName)
+        else { return }
+        menuBars?.run(owner, command: command)
     }
 
     /// Whether the Actions menu can offer refresh controls for this row.
@@ -600,7 +635,7 @@ final class ExtensionManager: ExtensionRuntimeDelegate, ExtensionHostContext {
             (try? String(contentsOf: bundle, encoding: .utf8)) ?? ""
         }.value
         guard !code.isEmpty else {
-            backgroundFailure = LaunchError.notBuilt(command.title).localizedDescription
+            backgroundFailure = ExtensionLaunchError.notBuilt(command.title).localizedDescription
             return
         }
         let context = makeLaunchContext(
@@ -786,6 +821,10 @@ final class ExtensionManager: ExtensionRuntimeDelegate, ExtensionHostContext {
     /// The running command's row metadata; a missing key leaves the subtitle alone.
     func updateCommandMetadata(subtitle: String?) {
         guard let reference = backgroundRef ?? running else { return }
+        updateCommandMetadata(subtitle: subtitle, for: reference)
+    }
+
+    func updateCommandMetadata(subtitle: String?, for reference: ExtensionCommandRef) {
         commandMetadata.setSubtitle(
             subtitle, extension: reference.extensionName, command: reference.commandName)
         publishLauncherEntries()
@@ -858,28 +897,28 @@ final class ExtensionManager: ExtensionRuntimeDelegate, ExtensionHostContext {
     /// `launchCommand` from a running command: same extension unless it names another.
     func launch(
         command name: String, extensionName: String?, arguments: [String: String],
-        fallbackText: String?, launchType: ExtensionLaunchType
+        fallbackText: String?, launchType: ExtensionLaunchType, launchContext: [String: RenderValue]
     ) throws {
-        let owningName = extensionName ?? running?.extensionName
+        let owningName = extensionName ?? activeExtensionName
         guard let owningName, let owner = extensionNamed(owningName),
             let command = owner.command(named: name)
-        else { throw LaunchError.unknownCommand(name) }
-        Task {
-            await run(
-                owner, command: command, arguments: arguments, fallbackText: fallbackText,
-                launchType: launchType)
+        else { throw ExtensionLaunchError.unknownCommand(name) }
+        guard isEnabled else { throw ExtensionLaunchError.unsupported("Extensions are disabled.") }
+        guard launchType != .background || command.mode != .view else {
+            throw ExtensionLaunchError.unsupported("A view command cannot run in the background.")
         }
+        coordinator?.runExtensionCommand(
+            entry(for: command, in: owner), arguments: arguments, fallbackText: fallbackText,
+            launchType: launchType, launchContext: launchContext)
     }
 
     func launch(_ link: ExtensionDeepLink) throws {
         guard let (owner, command) = resolve(link) else {
-            throw LaunchError.unknownCommand(link.commandName)
+            throw ExtensionLaunchError.unknownCommand(link.commandName)
         }
-        Task {
-            await run(
-                owner, command: command, arguments: link.arguments,
-                fallbackText: link.fallbackText, launchType: link.launchType)
-        }
+        coordinator?.runExtensionCommand(
+            entry(for: command, in: owner), arguments: link.arguments,
+            fallbackText: link.fallbackText, launchType: link.launchType)
     }
 
     func authorizeOAuth(options: ExtensionOAuthAuthorizeOptions) async throws -> ExtensionOAuthAuthorizeResult

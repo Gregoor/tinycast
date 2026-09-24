@@ -117,7 +117,8 @@ private struct MeetingRow: View {
     private var accessibilityText: String {
         let parts = [
             meeting.title, MeetingTimeFormat.range(of: meeting),
-            UpcomingWindow.rowCountdown(for: meeting, now: now), meeting.calendarName
+            UpcomingWindow.rowPill(for: meeting, now: now, calendar: .current)?.text,
+            meeting.calendarName
         ]
         return parts.compactMap(\.self).joined(separator: ", ")
     }

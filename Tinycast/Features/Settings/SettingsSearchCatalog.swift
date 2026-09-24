@@ -140,11 +140,8 @@ enum SettingsSearchCatalog {
             .generalAppearance, "Interface size",
             keywords: ["text size", "font size", "scale", "zoom", "bigger", "larger", "legible"]),
         .init(
-            .generalAppearance, "Background transparency",
-            keywords: ["glass", "opacity", "blur", "translucency", "reset"]),
-        .init(
-            .generalAppearance, "Compact mode",
-            keywords: ["slim", "search bar", "small"]),
+            .generalAppearance, "Window mode",
+            keywords: ["compact", "expanded", "slim", "search bar", "small"]),
         .init(
             .generalAppearance, "Show favorites in compact mode",
             keywords: ["pinned", "apps", "compact"]),
@@ -166,6 +163,12 @@ enum SettingsSearchCatalog {
         .init(
             .generalCalculator, "Number format",
             keywords: ["decimal", "comma", "separator", "locale", "region", "thousands"]),
+        .init(
+            .generalSearch, "Show suggestions",
+            keywords: ["frequent", "recent", "recommended", "empty", "root search"]),
+        .init(
+            .generalSearch, "Search sensitivity",
+            keywords: ["fuzzy", "strict", "loose", "matching", "typo", "root search"]),
         .init(
             .generalSearch, "Learned ranking",
             keywords: ["reset", "history", "order", "privacy"])
@@ -265,7 +268,8 @@ enum SettingsSearchCatalog {
     ]
 
     private static let ai: [SettingsSearchEntry] = [
-        .init(pane: .ai, keywords: ["chat", "llm", "model", "openai", "anthropic"]),
+        .init(
+            pane: .ai, keywords: ["chat", "quick ai", "llm", "model", "openai", "anthropic"]),
         .init(.aiAI, "Enable AI", keywords: ["chat", "llm"]),
         .init(
             .aiProviders, "Providers",
@@ -276,9 +280,10 @@ enum SettingsSearchCatalog {
         .init(.aiDefault, "Default model", keywords: ["llm", "gpt", "claude", "grok"]),
         .init(.aiDefault, "Reasoning effort", keywords: ["thinking", "effort", "deepseek"]),
         .init(.aiChat, "Web search", keywords: ["browse", "internet"]),
+        .init(.aiChat, "Tool call rounds", keywords: ["mcp", "tools", "limit", "loop", "agent", "unlimited"]),
         .init(
-            .aiConversations, "Opens to",
-            keywords: ["new chat", "last", "summon"]),
+            .aiConversations, "Quick AI opens to",
+            keywords: ["new chat", "last", "summon", "resume"]),
         .init(
             .aiConversations, "Start a new conversation after",
             keywords: ["idle", "timeout", "fresh"]),
@@ -511,6 +516,9 @@ enum SettingsSearchCatalog {
         .init(
             .calendarMenuBar, "Only show events with meetings",
             keywords: ["links", "filter", "menubar"]),
+        .init(
+            .calendarMenuBar, "Hide when there are no upcoming events",
+            keywords: ["empty", "idle", "menubar", "space"]),
         .init(
             .calendarMenuBar, "Hide Current Event",
             keywords: ["started", "time left", "menubar"]),

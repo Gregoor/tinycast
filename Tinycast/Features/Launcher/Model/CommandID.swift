@@ -2,7 +2,9 @@ import Foundation
 
 /// Built-in launcher actions, surfaced alongside the user-authored ones.
 enum CommandID: String, CaseIterable, Sendable {
-    case aiChat = "command:ai-chat"
+    /// The palette's chat keeps the id it shipped with, so its hotkeys and fallback still reach it.
+    case quickAI = "command:ai-chat"
+    case aiChat = "command:ai-chat-window"
     case fixGrammar = "command:fix-grammar"
     case rewrite = "command:rewrite"
     case translate = "command:translate"
@@ -44,6 +46,7 @@ enum CommandID: String, CaseIterable, Sendable {
 
     var name: String {
         switch self {
+        case .quickAI: return "Quick AI"
         case .aiChat: return "AI Chat"
         case .fixGrammar: return BuiltInQuickAction.fixGrammar.title
         case .rewrite: return BuiltInQuickAction.rewrite.title
@@ -79,7 +82,7 @@ enum CommandID: String, CaseIterable, Sendable {
         case .importSettings: return "Import Backup"
         case .importFromRaycast: return "Import from Raycast"
         case .checkForUpdates: return "Check for Updates"
-        case .settings: return "Settings"
+        case .settings: return "Tinycast Settings"
         case .about: return "About Tinycast"
         case .support: return "Support Tinycast"
         case .quit: return "Quit Tinycast"
@@ -88,7 +91,8 @@ enum CommandID: String, CaseIterable, Sendable {
 
     var sfSymbol: String {
         switch self {
-        case .aiChat: return "sparkles"
+        case .quickAI: return "sparkles"
+        case .aiChat: return "bubble.left.and.bubble.right"
         case .fixGrammar: return BuiltInQuickAction.fixGrammar.symbol
         case .rewrite: return BuiltInQuickAction.rewrite.symbol
         case .translate: return BuiltInQuickAction.translate.symbol
@@ -147,6 +151,27 @@ enum CommandID: String, CaseIterable, Sendable {
         case .translate: return .translate
         case .summarize: return .summarize
         default: return nil
+        }
+    }
+
+    /// Queries this command wins until the user opens a rival more.
+    var boostedTerms: Set<String> {
+        switch self {
+        case .quickAI: ["ai"]
+        case .aiChat: ["chat"]
+        default: []
+        }
+    }
+
+    /// Suggested, highest first, until the user's own habits fill the section.
+    var suggestionPriority: Int? {
+        switch self {
+        case .clipboardHistory: 80
+        case .searchFiles: 70
+        case .mySchedule: 60
+        case .searchEmoji: 50
+        case .createQuicklink, .createSnippet: 30
+        default: nil
         }
     }
 

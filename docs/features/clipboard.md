@@ -6,11 +6,17 @@
   has to outrank a stored `false` in `AppSettings.init`, and off means fully off: the poller stops,
   the SQLite file closes, the launcher command and its shortcut go, and Tab skips the screen.
   `ClipboardCoordinator.applyEnabled()` is the single place that applies it.
-- **↵ and ⌘↵ are one swapped pair, and `ClipboardCoordinator.activate(_:inverted:)` is the only
-  place that reads which way round they sit.** `clipboardDefaultAction` names what ↵ does — paste
-  (the default) or copy — and ⌘↵ always does the other. ⌘1…⌘0 on a pin and a double-click go
+- **↵, ⌘↵ and ⌃⌘↵ trade places around one setting, and
+  `ClipboardDefaultAction.action(for:on:)` is the only place that says which chord runs what.**
+  Paste owns ↵, Copy ⌘↵ and Paste as Plain Text ⌃⌘↵; `clipboardDefaultAction` moves one to ↵ and
+  Paste takes the chord it left, so a Copy default keeps the ↵/⌘↵ swap it always had.
+  `ClipboardCoordinator.activate(_:chord:)` runs it, and ⌘1…⌘0 on a pin and a double-click go
   through the same call, so no surface can drift from the setting; ⌥↵ pastes regardless, since
-  keeping the window open is a paste-only idea. The ⌘K menu puts the default first with the ↵ chip.
+  keeping the window open is a paste-only idea. The ⌘K menu lists the three in chord order, which
+  puts the default first with the ↵ chip.
+- **Paste as Plain Text writes `ClipboardItem.plainText` and nothing else**: the text itself, or a
+  file entry's path without its `public.file-url`. An image has none, so it gets no plain row, a
+  plain-text default pastes it as it is, and ⌃⌘↵ on it falls back to ⌘↵ as on every other screen.
 - **Clipboard writes stamp a private `internalType` marker** so the poller skips Tinycast's own writes.
   If the writer and the poller ever disagree, the app re-captures its own pastes in a loop.
 - **`Model/ClipboardStore.swift` keeps to Foundation plus SQLite3 and no other app source**, so
@@ -72,7 +78,7 @@ itself no longer drains the pasteboard into history either.
 
 Existing clips survive being switched off, since a history is captured rather than authored and
 nothing else can put it back. **Clear history stays live with the feature off** —
-`ClipboardCoordinator.clearHistory()` reopens the file, empties it and closes it again — so a reader
+`ClipboardCoordinator.clearHistory()` reopens the file, clears the unpinned rows and closes it again — so a reader
 who turns the feature off can still erase what it kept.
 
 ## Store
@@ -300,7 +306,7 @@ Pins change four things:
   the same) rather than dropping back into the date bucket it came from, which would scroll the list
   out from under the selection. It uses the same atomic timestamp and rowid update as `promote`.
 - **Retention.** Pruning skips pinned rows (`AND pinned_at IS NULL`), so a pin outlives the retention
-  window. "Clear History" still deletes everything.
+  window — and "Clear History" skips them on the same condition, so only `remove` drops a pin.
 - **Selection.** Pinning lifts a row out of its date bucket, so `ClipboardCoordinator.togglePinnedClip` moves the
   palette selection to the row's new index in the _current_ results and bumps `palette.followToken`,
   which is what makes the list scroll the highlight back into view.
@@ -369,8 +375,11 @@ Carrying file bytes would make a backup unbounded and defeat the point of refere
 
 ## Dragging out
 
-Every row is a drag source (`ClipDrag.swift`), so reaching another app costs one gesture instead of
-Reveal in Finder and a second drag. `ClipboardItem.dragPayload` says in what flavour: the file URL
+Every row is a drag source, so reaching another app costs one gesture instead of Reveal in Finder and
+a second drag. The press and the session are `onRowClick`'s `drag:` in
+`DesignSystem/Interaction/RowClick.swift`, shared with [File Search](file-search.md#dragging-out) and
+the launcher's [application rows](launcher.md#dragging-an-application-out); `ClipDrag.swift` is only
+what a clip hands over. `ClipboardItem.dragPayload` says in what flavour: the file URL
 for an image or a referenced file, a URL and its text for a link, plain text for the rest. It is
 derived and never persisted, like `textForm` beside it, and `textForm` stays the one answer to
 whether an entry is a link, so the drag and the type filter cannot disagree.
@@ -379,15 +388,15 @@ whether an entry is a link, so the drag and the type filter cannot disagree.
 **Copy, always. That is why the drag is AppKit and not `onDrag`.** `imagesDir` lives in Application
 Support, on the boot volume, which is the same volume as almost every drop target. A file-URL drag
 there defaults to a move, and a move carries the blob out of the history and strands its row. Only
-an `NSDraggingSource` can answer `sourceOperationMaskFor`, and `ClipDragView` answers `.copy` for
+an `NSDraggingSource` can answer `sourceOperationMaskFor`, and `RowPressView` answers `.copy` for
 every context. SwiftUI's `onDrag` takes an `NSItemProvider` and nothing else. A `.file` row is
 copy-only for the reverse reason: the path is the user's own file, and Tinycast must not move it.
 
 **It claims mouse-down, like `WindowDragHandle` does, because the hosting view eats the click
 first.** The overlay owns the whole press: select on the way down, activate on a double click, and
 start the session once the pointer passes 4pt of slop. A press that stays inside the slop was a
-click, which is why the handle takes `onSelect` and `onActivate` instead of sitting beside a tap
-gesture that would never fire. It declines the right button in `hitTest`, the mirror of what
+click, which is why the press takes `select` and `activate` instead of sitting beside a tap gesture
+that would never fire. It declines the right button in `hitTest`, the mirror of what
 `RightClickCatcher` does with the left one — an overlay that answers every event would sit on top of
 the actions catcher and silently swallow the menu.
 
@@ -402,7 +411,8 @@ tile, `cached` only and never `load`, because a decode on mouse-down stalls the 
 begins on. A link or a copy gets a drawn text tile. The dragging frame is sized to that image and
 centred on the cursor, since the row's own shape would stretch a thumbnail.
 
-**A landed drop hides the palette**, the ending a paste has, through `clipDropped()`. A cancelled
+**A landed drop hides the palette**, the ending a paste has, through `PaletteCoordinator.dragLanded()`
+— the one ending every draggable row shares. A cancelled
 drag leaves it up and animates back to the row it came from, so a drag that achieved nothing says
 so. The session outliving the panel is safe for the reason the player teardown above is delicate:
 `orderOut` leaves the SwiftUI tree mounted, and the pasteboard holds the payload from the moment the
