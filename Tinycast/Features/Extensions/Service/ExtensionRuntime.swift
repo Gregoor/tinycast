@@ -154,6 +154,34 @@ final class ExtensionRuntime: @unchecked Sendable {
         queue.async { self.nodeShims.closeFiles() }
     }
 
+    /// Swift→JS: ask a resident root-search provider for candidates. The JS side starts the async
+    /// `search` and reports back over hostCall("rootSearch","results"); `requestID` is echoed so a
+    /// late reply can be matched to the query that asked for it.
+    func fireRootSearchQuery(
+        session: String, providerID: String, query: String, limit: Int, requestID: String
+    ) async {
+        await onQueue { context in
+            _ = context.objectForKeyedSubscript("__tinycast")?
+                .invokeMethod(
+                    "rootSearchQuery",
+                    withArguments: [
+                        session, providerID, query, limit, requestID
+                    ])
+        }
+    }
+
+    /// Swift→JS: run the selected candidate's default action. The JS `rootSearchPerform(sessionId,
+    /// providerId, resultId)` takes a session first (unused here); Swift has no session for this host,
+    /// so it passes an empty first arg to keep `providerID`/`resultID` aligned.
+    func fireRootSearchPerform(providerID: String, resultID: String) async {
+        await onQueue { context in
+            _ = context.objectForKeyedSubscript("__tinycast")?
+                .invokeMethod(
+                    "rootSearchPerform",
+                    withArguments: ["", providerID, resultID])
+        }
+    }
+
     private func onQueue(_ body: @escaping @Sendable (JSContext) -> Void) async {
         await withCheckedContinuation { continuation in
             queue.async {

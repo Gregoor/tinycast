@@ -15,6 +15,7 @@ struct AppEntry: Identifiable, Hashable, Sendable {
         case appleShortcut
         case extensionCommand
         case meeting
+        case extensionResult
 
         var descriptor: KindDescriptor {
             switch self {
@@ -84,6 +85,14 @@ struct AppEntry: Identifiable, Hashable, Sendable {
                 return KindDescriptor(
                     label: "Meeting", sectionTitle: "Meetings",
                     openVerb: "Join Meeting", canHideFromSearch: false,
+                    canRevealInFinder: false, isSymbolIcon: true)
+            case .extensionResult:
+                // A transient external candidate — never published into AppIndex, only shown while
+                // a query resolves. No per-item preferences exist to hide or reveal, hence the two
+                // `false`s; its section is that of the provider's own name at render time.
+                return KindDescriptor(
+                    label: "Result", sectionTitle: "Results",
+                    openVerb: "Open Result", canHideFromSearch: false,
                     canRevealInFinder: false, isSymbolIcon: true)
             }
         }
@@ -185,7 +194,7 @@ struct AppEntry: Identifiable, Hashable, Sendable {
             return Quicklink.id(fromEntryID: id).map { .quicklink(id: $0) }
         case .appleShortcut:
             return AppleShortcut.id(fromEntryID: id).map { .appleShortcut(id: $0) }
-        case .snippet, .extensionCommand, .meeting:
+        case .snippet, .extensionCommand, .meeting, .extensionResult:
             return nil
         }
     }
@@ -218,6 +227,7 @@ struct AppEntry: Identifiable, Hashable, Sendable {
                 ?? CustomWindowSize.sfSymbol
         case .windowLayout: return WindowLayout.sfSymbol
         case .meeting: return "video.fill"
+        case .extensionResult: return "theatermasks.fill"
         case .application, .systemSettings, .appleShortcut, .extensionCommand: return "questionmark"
         }
     }
@@ -654,16 +664,24 @@ final class AppIndex {
 
     private func rank(_ q: String, limit: Int) -> [AppEntry] {
         Signposts.interval("AppIndex.rank") {
-            let learned = ranking.usage(query: q)
-            return LauncherOrder.ranked(
-                apps, query: FuzzyMatch.Query(q), limit: limit,
-                fields: { app in
-                    guard let alias = self.aliases.alias(for: app.preferenceKey) else {
-                        return SearchFields(app.aliases)
-                    }
-                    return SearchFields(app.aliases + [.userAlias(alias)])
-                },
-                usage: { learned[$0.preferenceKey] ?? 0 }, name: \.name)
+            return Self.ranked(apps, q, limit: limit, ranking: ranking, aliases: aliases)
         }
+    }
+
+    /// The one pure ranking pass behind `rank`.
+    private static func ranked(
+        _ entries: [AppEntry], _ q: String, limit: Int,
+        ranking: LauncherRankingStore, aliases: AliasStore
+    ) -> [AppEntry] {
+        let learned = ranking.usage(query: q)
+        return LauncherOrder.ranked(
+            entries, query: FuzzyMatch.Query(q), limit: limit,
+            fields: { app in
+                guard let alias = aliases.alias(for: app.preferenceKey) else {
+                    return SearchFields(app.aliases)
+                }
+                return SearchFields(app.aliases + [.userAlias(alias)])
+            },
+            usage: { learned[$0.preferenceKey] ?? 0 }, name: \.name)
     }
 }

@@ -149,6 +149,8 @@ final class LauncherCoordinator {
         case .snippet:
             let snippetID = String(app.id.dropFirst("snippet:".count))
             snippetCoordinator.expandSnippet(id: snippetID, target: previous)
+        case .extensionResult:
+            Task { await core.rootSearchProviders.perform(entry: app) }
         case .command, .quickAction, .customCommand, .systemAction, .windowCommand, .windowLayout,
             .quicklink, .appleShortcut, .extensionCommand, .meeting:
             break  // handled above

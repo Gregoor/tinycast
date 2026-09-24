@@ -61,6 +61,8 @@ enum EntryIcon: Hashable, Sendable {
     case artwork(path: String, extent: CGFloat)
     /// A declared type's icon, for a bundle whose own file icon is a placeholder.
     case contentType(String)
+    /// A remote poster (extension root-search row), fetched + cached by URL; never on the render path.
+    case poster(url: URL)
 }
 
 struct IconSize: Hashable, Sendable {
@@ -361,6 +363,55 @@ enum IconCache {
         key("artwork:\(extent):\(path)")
     }
 
+    // MARK: - Remote posters (extension root-search rows)
+
+    /// The synchronous render path must never touch the network: a poster shows its cached bitmap or a
+    /// placeholder until `loadPosterAsync` (off-main) fetches + caches the real one.
+    static func poster(forURL url: URL) -> NSImage {
+        cachedPoster(url) ?? symbolIcon(named: "film.strip.square")
+    }
+
+    static func cachedPoster(_ url: URL) -> NSImage? {
+        cache.object(forKey: posterKey(url))
+    }
+
+    static func loadPosterAsync(_ url: URL) async -> NSImage? {
+        if let cached = cachedPoster(url) { return cached }
+        guard let (data, _) = try? await posterSession.data(from: url) else { return nil }
+        let decoded = await Task.detached(priority: .userInitiated) {
+            Decoded(image: NSImage(data: data))
+        }.value
+        guard let source = decoded.image else { return nil }
+        let (icon, cost) = squareCropped(source)
+        cache.setObject(icon, forKey: posterKey(url), cost: cost)
+        return icon
+    }
+
+    /// Fill a (usually 2:3 portrait) poster into the square row tile, cropping the overflow rather than
+    /// squashing: a straight `fitted` would stretch a portrait to fit. Units are display points, so
+    /// the tile is `displayPixel` square with no margin — a poster is a photo, not an app icon.
+    private static func squareCropped(_ source: NSImage) -> (NSImage, Int) {
+        let w = source.size.width
+        let h = source.size.height
+        guard w > 0, h > 0 else { return (source, 0) }
+        let side = displayPixel
+        let scale = max(side / w, side / h)  // cover the square, cropping the longer axis
+        let dw = w * scale
+        let dh = h * scale
+        return rasterized(
+            source,
+            into: NSRect(x: (side - dw) / 2, y: (side - dh) / 2, width: dw, height: dh))
+    }
+
+    private static func posterKey(_ url: URL) -> NSString { key("poster:" + url.absoluteString) }
+
+    /// The remote-session static, declared last like the other `Session`s in this file.
+    private static let posterSession: URLSession = {
+        let config = URLSessionConfiguration.ephemeral
+        config.urlCache = nil
+        return URLSession(configuration: config)
+    }()
+
     // MARK: - Drawing an `EntryIcon`
 
     /// One switch, so a row never has to know which of these paths its entry wants.
@@ -371,6 +422,7 @@ enum IconCache {
         case .tintedSymbol(let name, let tint): return symbolIcon(named: name, tint: tint)
         case .artwork(let path, let extent): return artwork(atPath: path, extent: extent)
         case .contentType(let identifier): return contentTypeIcon(identifier)
+        case .poster(let url): return poster(forURL: url)
         }
     }
 
@@ -381,6 +433,7 @@ enum IconCache {
         case .tintedSymbol(let name, let tint): return cachedSymbol(named: name, tint: tint)
         case .artwork(let path, let extent): return cachedArtwork(atPath: path, extent: extent)
         case .contentType(let identifier): return cachedContentTypeIcon(identifier)
+        case .poster(let url): return cachedPoster(url)
         }
     }
 
@@ -392,6 +445,7 @@ enum IconCache {
         case .artwork(let path, let extent):
             return await loadArtworkAsync(atPath: path, extent: extent)
         case .contentType(let identifier): return await loadContentTypeIconAsync(identifier)
+        case .poster(let url): return await loadPosterAsync(url)
         }
     }
 

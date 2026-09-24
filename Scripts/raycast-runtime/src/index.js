@@ -15,6 +15,7 @@ import { NavigationRoot, setFieldCommandHandler } from "./api/components.js";
 import { Surface } from "./reconciler.js";
 import { raycastApi } from "./api/index.js";
 import { configureSystem, runToastAction } from "./api/system.js";
+import { runRootSearchQuery, runRootSearchPerform, tinycastApi } from "./api/root-search.js";
 import { WebSocket } from "./websocket.js";
 
 const reactModule = {
@@ -33,6 +34,9 @@ defineModule("react", reactModule);
 defineModule("react/jsx-runtime", jsxModule);
 defineModule("react/jsx-dev-runtime", jsxModule);
 defineModule("@raycast/api", raycastApi);
+// Tinycast-only API (plan §2): root-search providers. Not part of @raycast/api — real Raycast has
+// no result-provider hook — so it lives under its own module and degrades cleanly when run there.
+defineModule("@tinycast/api", tinycastApi);
 // react-dom only appears in bundles defensively; make the import resolve and the calls explain.
 defineModule("react-dom", {
   render: () => {
@@ -177,6 +181,17 @@ globalThis.__tinycast = {
   settle,
   fireTimer,
   runToastAction,
+
+  /// Swift→JS: ask a registered root-search provider for candidates. Fires the (possibly async)
+  /// `search` and reports back over hostCall("rootSearch","results"); Swift matches by `requestId`.
+  rootSearchQuery(sessionId, providerId, query, limit, requestId) {
+    return runRootSearchQuery(providerId, query, limit, requestId);
+  },
+
+  /// Swift→JS: run a selected candidate's default action.
+  rootSearchPerform(sessionId, providerId, resultId) {
+    return runRootSearchPerform(providerId, resultId);
+  },
 
   stop(sessionId) {
     sessions.get(sessionId)?.unmount();

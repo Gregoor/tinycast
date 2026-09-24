@@ -359,11 +359,20 @@ struct RootPaletteView: View {
             // A preserved screen re-summons as it was left, so a menu must end with the palette.
             .onChange(of: vm.isVisible) {
                 if !vm.isVisible, menuOpen { closeMenus() }
+                // A root-search provider mounts its corpus for the palette's lifetime only: warm as it
+                // opens, so the boot overlaps with typing, and release as it closes, so a ~100 MB index
+                // isn't held while the palette is away.
+                if vm.isVisible {
+                    Task { await core.rootSearchProviders.warmAll() }
+                } else {
+                    Task { await core.rootSearchProviders.releaseAll() }
+                }
             }
             .onChange(of: vm.query) {
                 if vm.collapseQueryLineBreaks() { return }
                 vm.selection = 0
                 scroll = ScrollIntent(kind: .top)
+                if vm.mode == .launcher { core.rootSearchProviders.queryChanged(for: vm.query) }
                 if vm.mode == .fileSearch { fileSearch.search(vm.query, filter: vm.fileSearchFilter) }
                 if vm.mode == .dictionary { dictionary.lookUp(vm.query) }
                 if vm.mode == .menuSearch { menuSearch.filter(vm.query) }

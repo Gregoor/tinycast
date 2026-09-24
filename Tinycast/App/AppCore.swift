@@ -8,6 +8,9 @@ final class AppCore {
 
     let launcherRanking: LauncherRankingStore
     let appIndex: AppIndex
+    /// Transient root-search candidates from registered providers; the movie provider registers in
+    /// `AppCore.start()` (the plan's Phase-2 stand-in for the JS bridge).
+    let rootSearchProviders = RootSearchProviders()
     let customCommands = CustomCommandStore()
     let quicklinks = QuicklinkStore()
     let windowLayouts = WindowLayoutStore()
@@ -245,6 +248,19 @@ final class AppCore {
             }
 
             appIndex.start(settings: settings)
+            // The coordinator blends native core results with extension candidates; wire the native
+            // index ranker as the "core" half.
+            rootSearchProviders.setCore { query in
+                self.appIndex.orderedResults(
+                    query: query, visibility: self.visibility, favorites: self.favorites)
+            }
+            // The real movie provider: a resident JS session loading the movie bundle.
+            let bundle = MovieProviderBundle.location
+            if FileManager.default.fileExists(atPath: bundle.path) {
+                rootSearchProviders.register(
+                    JSRootSearchProvider(host: RootSearchProviderHost(
+                        providerID: "movies", bundleURL: bundle)))
+            }
             clipboardCoordinator.applyEnabled()
             extensions.start(appIndex: appIndex, coordinator: extensionCoordinator)
             extensionCoordinator.applyEnabled()
