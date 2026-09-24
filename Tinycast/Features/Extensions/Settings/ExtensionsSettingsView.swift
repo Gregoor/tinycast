@@ -35,7 +35,6 @@ struct ExtensionsSettingsView: View {
             Group {
                 install
                 library
-                searchIndexes
                 compatibility
             }
             .settingsEnabled(settings.extensionsEnabled)
@@ -108,14 +107,14 @@ struct ExtensionsSettingsView: View {
     /// `LauncherItemsSection`'s shape, so a long list reads as a list.
     private var library: some View {
         Section {
-            if core.extensions.installed.isEmpty {
+            if installedCount == 0 {
                 Text("Nothing installed yet.")
                     .foregroundStyle(.secondary)
             } else {
-                if core.extensions.installed.count > 3 {
+                if installedCount > 3 {
                     SettingsFilterField(prompt: "Filter extensions…", query: $filter)
                 }
-                if matching.isEmpty {
+                if matching.isEmpty, matchingProviders.isEmpty {
                     Text("No extension matches \u{201C}\(filter)\u{201D}.")
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .center)
@@ -136,17 +135,33 @@ struct ExtensionsSettingsView: View {
                                     core.extensionCoordinator.confirmUninstall(installed)
                                 })
                         }
+                        // A resident root-search provider is an extension the user installed, so it is
+                        // listed and counted here rather than in a section of its own.
+                        ForEach(Array(matchingProviders.enumerated()), id: \.element) { index, id in
+                            if index > 0 || !matching.isEmpty { Divider() }
+                            RootSearchProviderRow(id: id, status: indexStatuses[id])
+                        }
                     }
                     .padding(.vertical, -Self.rowPadding)
                 }
             }
         } header: {
             SettingsSectionHeader(anchor: .extensionsInstalled) {
-                Text(
-                    core.extensions.installed.isEmpty
-                        ? "Installed" : "Installed (\(core.extensions.installed.count))")
+                Text(installedCount == 0 ? "Installed" : "Installed (\(installedCount))")
             }
         }
+    }
+
+    /// Extensions plus the providers listed among them, which is what the section above shows.
+    private var installedCount: Int {
+        core.extensions.installed.count + core.rootSearchProviders.registeredIDs.count
+    }
+
+    /// The providers, filtered by the same field as the extensions they are listed with.
+    private var matchingProviders: [String] {
+        let ids = core.rootSearchProviders.registeredIDs
+        guard !filter.isEmpty else { return ids }
+        return ids.filter { $0.localizedCaseInsensitiveContains(filter) }
     }
 
     /// A grouped `Form` row's own vertical padding, which the stack above has to give back.
@@ -242,35 +257,9 @@ struct ExtensionsSettingsView: View {
         return "Reclaims \(ExtensionCleanup.formatted(bytes: reclaimable.bytes)) from \(items)."
     }
 
-    /// What each registered provider holds on disk. The manifest it cached names the release it
-    /// installed, so this reports the index actually in use rather than the one the release advertises
-    /// — which is the difference a failing sync hides.
-    private var searchIndexes: some View {
-        Section {
-            ForEach(core.rootSearchProviders.registeredIDs, id: \.self) { id in
-                SettingsRow(
-                    title: id.capitalized, subtitle: indexSubtitle(for: id),
-                    anchor: .extensionsIndex
-                ) {
-                    Image(systemName: "clock.arrow.circlepath")
-                        .foregroundStyle(.secondary)
-                } trailing: {
-                    EmptyView()
-                }
-            }
-        } header: {
-            SettingsSectionHeader(.extensionsIndex)
-        }
-    }
-
-    private func indexSubtitle(for id: String) -> String {
-        guard let status = indexStatuses[id] else { return "Nothing downloaded yet." }
-        let stamp = status.publishedAt.formatted(date: .long, time: .shortened)
-        return "Published \(stamp) · \(status.publishedAt.formatted(.relative(presentation: .named)))"
-    }
-
-    /// Synchronous by design: one small file the provider has already written, so there is nothing to
-    /// await and no reason to show the pane before knowing.
+    /// Synchronous by design: one small file per provider, already written, so there is nothing to
+    /// await. The manifest a provider caches names the release it installed, so this reports the index
+    /// actually in use rather than the one the release advertises today.
     private func loadIndexStatuses() {
         indexStatuses = Dictionary(
             uniqueKeysWithValues: core.rootSearchProviders.registeredIDs.compactMap { id in
@@ -370,6 +359,35 @@ struct ExtensionsSettingsView: View {
             return
         }
         pending = await core.extensions.raycastImportCandidates().filter { !$0.isInstalled }
+    }
+}
+
+/// A resident root-search provider, listed with the installed extensions because that is what it is to
+/// the user: an extension that contributes launcher results. It does not expand — its one preference is
+/// still a file the README tells you to edit.
+private struct RootSearchProviderRow: View {
+    let id: String
+    let status: RootSearchIndexStatus?
+
+    var body: some View {
+        SettingsRow(
+            title: id.localizedCapitalized, subtitle: subtitle, subtitleLineLimit: 2
+        ) {
+            Image(systemName: "film")
+                .font(.system(size: 14))
+                .foregroundStyle(.secondary)
+                .frame(width: Theme.Size.rowIcon, height: Theme.Size.rowIcon)
+        } trailing: {
+            EmptyView()
+        }
+    }
+
+    /// The index's own date rather than the release's: a stale one here is what a stopped sync looks
+    /// like, which is the whole reason a provider reports it.
+    private var subtitle: String {
+        guard let status else { return "Root search provider · nothing downloaded yet." }
+        return "Root search provider · published "
+            + "\(status.publishedAt.formatted(date: .long, time: .shortened))"
     }
 }
 
