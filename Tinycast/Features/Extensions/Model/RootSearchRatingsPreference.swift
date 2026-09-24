@@ -1,74 +1,68 @@
 import Foundation
 
-/// Which ratings a root-search provider shows on its result rows — the preference the app writes and
-/// the provider reads back from its own cache.
+/// Which ratings a root-search provider shows on its result rows, and in what order — the preference
+/// the app writes and the provider reads back from its own cache.
 ///
-/// The provider owns the file's meaning and falls back per key, so a write replaces only `ratings`
-/// and leaves anything else in the file alone. A file that says something these choices don't say is
-/// reported as `custom` rather than quietly rewritten to one of them.
+/// The provider knows three sources and renders the media type's list in order, falling back to its
+/// own list only when that one has nothing for the title. So the order is the settings, not a detail
+/// of them: a row prints the first source that has a score.
+///
+/// The layout in `order` is the app's, not the file's — it exists so a source that is switched off
+/// keeps its place among the rows instead of jumping to the end. What gets written is only `listed`.
 struct RootSearchRatingsPreference: Sendable, Equatable {
-    enum Choice: String, CaseIterable, Sendable {
-        case rottenTomatoes
-        case rottenTomatoesAndMetacritic
-        case imdbOnly
-        case custom
+    enum Source: String, CaseIterable, Sendable {
+        case rt
+        case metacritic
+        case imdb
 
         var title: String {
             switch self {
-            case .rottenTomatoes: "Rotten Tomatoes"
-            case .rottenTomatoesAndMetacritic: "RT and Metacritic"
-            case .imdbOnly: "IMDb only"
-            case .custom: "Edited by hand"
+            case .rt: "Rotten Tomatoes"
+            case .metacritic: "Metacritic"
+            case .imdb: "IMDb"
             }
         }
 
+        /// What a row will actually show, so the choice reads as the thing it produces.
         var detail: String {
             switch self {
-            case .rottenTomatoes: "The tomato where there is one, the star otherwise."
-            case .rottenTomatoesAndMetacritic: "Both film scores, the star otherwise."
-            case .imdbOnly: "The star for everything."
-            case .custom: "This file was edited outside Tinycast."
-            }
-        }
-
-        /// The `ratings` object this writes. `nil` for `custom`, which is only ever read.
-        fileprivate var ratings: [String: [String]]? {
-            switch self {
-            case .rottenTomatoes:
-                ["movie": ["rt"], "tv": ["rt"], "fallback": ["imdb"]]
-            case .rottenTomatoesAndMetacritic:
-                ["movie": ["rt", "metacritic"], "tv": ["rt"], "fallback": ["imdb"]]
-            case .imdbOnly:
-                ["movie": ["imdb"], "tv": ["imdb"], "fallback": []]
-            case .custom:
-                nil
-            }
-        }
-
-        /// True when the file says exactly this — same keys, same order, nothing extra. An extra key
-        /// means someone edited it beyond these choices, which is `custom` and never a rewrite.
-        fileprivate func matches(_ file: [String: Any]) -> Bool {
-            guard let expected = ratings, file.count == expected.count else { return false }
-            return expected.allSatisfy { key, value in
-                let written = (file[key] as? [String]) ?? (file[key] as? String).map { [$0] }
-                return written == value
+            case .rt: "The tomato, or the splat under 60%."
+            case .metacritic: "A green, yellow or red dot."
+            case .imdb: "The star."
             }
         }
     }
 
-    /// The provider's own default when there is no file, so a fresh install reports what it will use.
-    static func choice(inCache directory: URL, fileManager: FileManager = .default) -> Choice {
-        guard let file = ratingsObject(inCache: directory, fileManager: fileManager) else {
-            return .rottenTomatoes
-        }
-        return Choice.allCases.first { $0.matches(file) } ?? .custom
+    /// One media type's rows and what is listed for it. The defaults are the provider's own.
+    struct Media: Sendable, Equatable {
+        var order: [Source] = Source.allCases
+        var shown: Set<Source> = [.rt]
+
+        /// The config's list: the shown sources, in the order the rows are laid out.
+        var listed: [Source] { order.filter(shown.contains) }
     }
 
-    /// Writes the choice, preserving every key the file already carries outside `ratings`.
-    static func write(
-        _ choice: Choice, inCache directory: URL, fileManager: FileManager = .default
-    ) {
-        guard let ratings = choice.ratings else { return }
+    var movie = Media()
+    var tv = Media()
+    /// Neither edited here nor derived: whatever the file already said, so a hand-written fallback
+    /// survives a change made in Settings.
+    var fallback: [Source] = [.imdb]
+
+    static func read(inCache directory: URL, fileManager: FileManager = .default) -> Self {
+        guard let ratings = ratingsObject(inCache: directory, fileManager: fileManager) else {
+            return Self()
+        }
+        var preference = Self()
+        preference.movie = media(ratings["movie"])
+        preference.tv = media(ratings["tv"])
+        if let fallback = ratings["fallback"] as? [String] {
+            preference.fallback = fallback.compactMap(Source.init(rawValue:))
+        }
+        return preference
+    }
+
+    /// Writes the preference, keeping every key the file already carries outside `ratings`.
+    func write(inCache directory: URL, fileManager: FileManager = .default) {
         let path = directory.appendingPathComponent("config.json")
         var root: [String: Any] = [:]
         if let data = fileManager.contents(atPath: path.path),
@@ -77,7 +71,11 @@ struct RootSearchRatingsPreference: Sendable, Equatable {
         {
             root = existing
         }
-        root["ratings"] = ratings
+        root["ratings"] = [
+            "movie": movie.listed.map(\.rawValue),
+            "tv": tv.listed.map(\.rawValue),
+            "fallback": fallback.map(\.rawValue),
+        ]
         guard let data = try? JSONSerialization.data(
             withJSONObject: root, options: [.prettyPrinted, .sortedKeys])
         else { return }
@@ -85,12 +83,24 @@ struct RootSearchRatingsPreference: Sendable, Equatable {
         try? data.write(to: path)
     }
 
+    /// A list the provider could also write as a bare string, ordered as the config listed it with the
+    /// unlisted sources after.
+    private static func media(_ value: Any?) -> Media {
+        let listed = ((value as? [String]) ?? (value as? String).map { [$0] } ?? [])
+            .compactMap(Source.init(rawValue:))
+        var media = Media()
+        media.shown = Set(listed)
+        media.order = listed + Source.allCases.filter { !media.shown.contains($0) }
+        return media
+    }
+
     private static func ratingsObject(
         inCache directory: URL, fileManager: FileManager
     ) -> [String: Any]? {
         let path = directory.appendingPathComponent("config.json")
         guard let data = fileManager.contents(atPath: path.path),
-            let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+            let object = try? JSONSerialization.jsonObject(with: data),
+            let root = object as? [String: Any],
             let ratings = root["ratings"] as? [String: Any], !ratings.isEmpty
         else { return nil }
         return ratings

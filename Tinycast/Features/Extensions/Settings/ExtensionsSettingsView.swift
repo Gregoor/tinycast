@@ -370,6 +370,42 @@ struct ExtensionsSettingsView: View {
     }
 }
 
+/// One source in a ratings list: what it shows, where it sits in the order, and whether it is listed
+/// at all. The controls mirror the fallbacks' ordering row — same chevrons, same checkbox.
+private struct RatingsSourceRow: View {
+    let source: RootSearchRatingsPreference.Source
+    let isShown: Bool
+    let canMoveUp: Bool
+    let canMoveDown: Bool
+    let onMove: (Int) -> Void
+    let onToggle: (Bool) -> Void
+
+    var body: some View {
+        SettingsCardRow(title: source.title, detail: source.detail) {
+            HStack(spacing: Theme.Spacing.sm) {
+                Button {
+                    onMove(-1)
+                } label: {
+                    Image(systemName: "chevron.up")
+                }
+                .disabled(!canMoveUp)
+                .accessibilityLabel("Move \(source.title) up")
+                Button {
+                    onMove(1)
+                } label: {
+                    Image(systemName: "chevron.down")
+                }
+                .disabled(!canMoveDown)
+                .accessibilityLabel("Move \(source.title) down")
+                Toggle("", isOn: Binding(get: { isShown }, set: onToggle))
+                    .labelsHidden()
+                    .toggleStyle(.checkbox)
+                    .accessibilityLabel("Show \(source.title)")
+            }
+        }
+    }
+}
+
 /// A resident root-search provider, listed with the installed extensions because that is what it is to
 /// the user: an extension that contributes launcher results, and one whose ratings preference is the
 /// app's to write and the provider's to read back.
@@ -379,7 +415,7 @@ private struct RootSearchProviderRow: View {
     let isExpanded: Bool
     let onToggle: () -> Void
 
-    @State private var choice: RootSearchRatingsPreference.Choice = .rottenTomatoes
+    @State private var preference = RootSearchRatingsPreference()
 
     /// A grouped `Form` row's own vertical padding, restored around the summary.
     private static let rowPadding: CGFloat = 15
@@ -429,17 +465,11 @@ private struct RootSearchProviderRow: View {
                 alignment: .leading, horizontalSpacing: Theme.Spacing.lg,
                 verticalSpacing: Theme.Spacing.md
             ) {
-                heading("Ratings")
-                SettingsCardRow(title: "Shown on a result", detail: choice.detail) {
-                    Picker("", selection: rating) {
-                        ForEach(RootSearchRatingsPreference.Choice.allCases, id: \.self) { option in
-                            Text(option.title).tag(option)
-                        }
-                    }
-                    .labelsHidden()
-                    .fixedSize()
-                }
-
+                heading("Movies")
+                mediaRows(\.movie)
+                rule
+                heading("TV")
+                mediaRows(\.tv)
                 rule
                 heading("Index")
                 SettingsCardRow(title: "Last published", detail: published) {
@@ -451,17 +481,42 @@ private struct RootSearchProviderRow: View {
         .padding(.leading, Theme.Size.rowIcon + Theme.Spacing.lg)
         .padding(.bottom, Theme.Spacing.lg)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .onAppear { choice = RootSearchRatingsPreference.choice(inCache: cacheDirectory) }
+        .onAppear { preference = RootSearchRatingsPreference.read(inCache: cacheDirectory) }
     }
 
-    /// Writes on a pick, never on the read that seeded it: `onChange` cannot tell the two apart.
-    private var rating: Binding<RootSearchRatingsPreference.Choice> {
-        Binding(
-            get: { choice },
-            set: { picked in
-                choice = picked
-                RootSearchRatingsPreference.write(picked, inCache: cacheDirectory)
-            })
+    /// Every source for one media type, in the order a row would print them. The layout is the app's —
+    /// switching a source off leaves it where it is rather than sending it to the bottom.
+    @ViewBuilder
+    private func mediaRows(
+        _ media: WritableKeyPath<RootSearchRatingsPreference, RootSearchRatingsPreference.Media>
+    ) -> some View {
+        let current = preference[keyPath: media]
+        ForEach(Array(current.order.enumerated()), id: \.element) { index, source in
+            RatingsSourceRow(
+                source: source,
+                isShown: current.shown.contains(source),
+                canMoveUp: index > 0,
+                canMoveDown: index < current.order.count - 1,
+                onMove: { delta in
+                    mutate { $0[keyPath: media].order.swapAt(index, index + delta) }
+                },
+                onToggle: { show in
+                    mutate {
+                        if show {
+                            $0[keyPath: media].shown.insert(source)
+                        } else {
+                            $0[keyPath: media].shown.remove(source)
+                        }
+                    }
+                })
+        }
+    }
+
+    /// Writes on every change: the provider reads this file when the palette next opens, and an edit
+    /// that never reaches it is the failure this setting exists to end.
+    private func mutate(_ change: (inout RootSearchRatingsPreference) -> Void) {
+        change(&preference)
+        preference.write(inCache: cacheDirectory)
     }
 
     private var published: String {
