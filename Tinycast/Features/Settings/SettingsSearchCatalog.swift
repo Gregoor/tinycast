@@ -548,6 +548,9 @@ enum SettingsSearchCatalog {
             group: .extensionsCompatibility, "Compatibility",
             keywords: ["supported", "unsupported", "raycast api"]),
         .init(
+            group: .extensionsIndex, "Search index",
+            keywords: ["movies", "tmdb", "ratings", "downloaded", "published", "updated"]),
+        .init(
             .extensionsStorage, "Leftover files",
             keywords: ["clean up", "disk", "reclaim", "cache"])
     ]

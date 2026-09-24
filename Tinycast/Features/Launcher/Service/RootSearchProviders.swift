@@ -109,6 +109,10 @@ final class RootSearchProviders {
         providers.append(provider)
     }
 
+    /// The registered providers' ids, for a surface outside the launcher that has to ask about them —
+    /// the settings pane reports each provider's index freshness from this.
+    var registeredIDs: [String] { providers.map(\.id) }
+
     /// Boot every provider with a cold start. Called as the palette opens, unawaited, so the boot
     /// overlaps with the user typing rather than landing inside the first frame's settle budget.
     func warmAll() async {

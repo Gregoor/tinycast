@@ -84,9 +84,23 @@ enum ExtensionCatalog {
     }
 
     private static func supportDirectory() -> URL {
+        scopedDirectory(in: .applicationSupportDirectory)
+    }
+
+    /// Where a resident root-search provider keeps what it downloads — its index and the manifest it
+    /// last synced. Caches, not Application Support: the index is hash-verified and re-downloadable, so
+    /// losing it costs a download and nothing else. Scoped by bundle id, so a Dev build's index never
+    /// collides with an installed copy's.
+    static func providerCachePath(for name: String) -> URL {
+        scopedDirectory(in: .cachesDirectory)
+            .appendingPathComponent("provider-cache", isDirectory: true)
+            .appendingPathComponent(safeName(name), isDirectory: true)
+    }
+
+    private static func scopedDirectory(in directory: FileManager.SearchPathDirectory) -> URL {
         let base =
-            FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)
-            .first ?? FileManager.default.homeDirectoryForCurrentUser
+            FileManager.default.urls(for: directory, in: .userDomainMask).first
+            ?? FileManager.default.homeDirectoryForCurrentUser
         let bundleID = Bundle.main.bundleIdentifier ?? "com.tinycast.app"
         return base.appendingPathComponent(bundleID, isDirectory: true)
     }

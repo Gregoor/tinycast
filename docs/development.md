@@ -64,6 +64,8 @@ Consequences worth knowing:
 - The dev build asks for Accessibility on its own the first time, and starts with **no** hotkeys bound
   and onboarding unseen. Grant and bind once; it persists across rebuilds, because the fixed build path
   and the `Tinycast Self-Signed` identity keep the TCC grant alive.
+- Extensions are opt-in, and that flag lives in the per-channel plist — so a fresh dev channel starts
+  with them off and Settings ▸ Extensions is dimmed until **Enable extensions** is switched on there.
 - Don't bind the same global hotkey in both — whichever registered first wins.
 - The Hyper Key's Caps Lock remap is `hidutil` state, which is **system-wide, not per-bundle**: quitting
   one build clears the remap for the other, which then needs a rebind or a relaunch to restore it.

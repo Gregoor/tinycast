@@ -16,6 +16,8 @@ struct ExtensionsSettingsView: View {
     @State private var importSummary: String?
     /// What a cleanup would reclaim, rescanned whenever the installed set changes.
     @State private var reclaimable = ExtensionCleanup.Report()
+    /// Each provider's index as of the last time the pane appeared, keyed by provider id.
+    @State private var indexStatuses: [String: RootSearchIndexStatus] = [:]
 
     var body: some View {
         @Bindable var settings = core.settings
@@ -33,6 +35,7 @@ struct ExtensionsSettingsView: View {
             Group {
                 install
                 library
+                searchIndexes
                 compatibility
             }
             .settingsEnabled(settings.extensionsEnabled)
@@ -73,6 +76,7 @@ struct ExtensionsSettingsView: View {
             await core.extensions.refresh()
             await measureReclaimable()
             await findPending()
+            loadIndexStatuses()
         }
     }
 
@@ -234,6 +238,43 @@ struct ExtensionsSettingsView: View {
         guard !reclaimable.isEmpty else { return "Nothing to clean up." }
         let items = reclaimable.items == 1 ? "1 item" : "\(reclaimable.items) items"
         return "Reclaims \(ExtensionCleanup.formatted(bytes: reclaimable.bytes)) from \(items)."
+    }
+
+    /// What each registered provider holds on disk. The manifest it cached names the release it
+    /// installed, so this reports the index actually in use rather than the one the release advertises
+    /// — which is the difference a failing sync hides.
+    private var searchIndexes: some View {
+        Section {
+            ForEach(core.rootSearchProviders.registeredIDs, id: \.self) { id in
+                SettingsRow(
+                    title: id.capitalized, subtitle: indexSubtitle(for: id),
+                    anchor: .extensionsIndex
+                ) {
+                    Image(systemName: "clock.arrow.circlepath")
+                        .foregroundStyle(.secondary)
+                } trailing: {
+                    EmptyView()
+                }
+            }
+        } header: {
+            SettingsSectionHeader(.extensionsIndex)
+        }
+    }
+
+    private func indexSubtitle(for id: String) -> String {
+        guard let status = indexStatuses[id] else { return "Nothing downloaded yet." }
+        let stamp = status.publishedAt.formatted(date: .long, time: .shortened)
+        return "Published \(stamp) · \(status.publishedAt.formatted(.relative(presentation: .named)))"
+    }
+
+    /// Synchronous by design: one small file the provider has already written, so there is nothing to
+    /// await and no reason to show the pane before knowing.
+    private func loadIndexStatuses() {
+        indexStatuses = Dictionary(
+            uniqueKeysWithValues: core.rootSearchProviders.registeredIDs.compactMap { id in
+                RootSearchIndexStatus.read(fromCache: ExtensionCatalog.providerCachePath(for: id))
+                    .map { (id, $0) }
+            })
     }
 
     /// Off-main: measuring walks a `node_modules`, which is tens of thousands of files.

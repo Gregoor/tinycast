@@ -13,7 +13,7 @@ struct ExtensionBootConfig: Sendable {
     var totalMemory: Double
     var environmentVariables: [String: String]
 
-    static func current(supportDirectory: URL) -> ExtensionBootConfig {
+    static func current(supportDirectory: URL, cacheDirectory: URL? = nil) -> ExtensionBootConfig {
         let info = ProcessInfo.processInfo
         var arch = "arm64"
         #if arch(x86_64)
@@ -25,6 +25,10 @@ struct ExtensionBootConfig: Sendable {
             (variables["PATH"].map { $0 + ":" } ?? "")
             + "/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
         variables["HOME"] = FileManager.default.homeDirectoryForCurrentUser.path
+        // A resident root-search provider cannot read `environment.supportPath` — its `@tinycast/api`
+        // surface is two functions — so where it may cache what it downloads is handed to it here.
+        // Absent for every other extension, which reads `supportPath` from its launch context instead.
+        if let cacheDirectory { variables["TINYCAST_PROVIDER_CACHE"] = cacheDirectory.path }
 
         return ExtensionBootConfig(
             arch: arch,

@@ -29,6 +29,9 @@ final class RootSearchProviderHost {
     /// Where a provider keeps its own data (its index cache). Keyed by provider id, under the
     /// channel's Application Support, so a Dev build never shares a stable's cache.
     private let supportDirectory: URL
+    /// Where this provider keeps what it downloads. Derived here because the provider cannot reach the
+    /// app's path conventions — and read back by the settings pane to report when the index last ran.
+    let cacheDirectory: URL
     private var started = false
     private var nextRequestID = 1
 
@@ -54,6 +57,7 @@ final class RootSearchProviderHost {
         self.providerID = providerID
         self.bundleURL = bundleURL
         supportDirectory = ExtensionCatalog.supportPath(for: providerID)
+        cacheDirectory = ExtensionCatalog.providerCachePath(for: providerID)
         try? FileManager.default.createDirectory(
             at: supportDirectory, withIntermediateDirectories: true)
         bridge = RootSearchHostBridge()
@@ -70,7 +74,8 @@ final class RootSearchProviderHost {
         let built = ExtensionRuntime(hostAPI: bridge)
         do {
             try await built.boot(
-                config: ExtensionBootConfig.current(supportDirectory: supportDirectory))
+                config: ExtensionBootConfig.current(
+                    supportDirectory: supportDirectory, cacheDirectory: cacheDirectory))
         } catch {
             throw error
         }
