@@ -255,19 +255,19 @@ final class AppCore {
             }
 
             appIndex.start(settings: settings)
-            // The coordinator blends native core results with extension candidates; wire the native
-            // index ranker as the "core" half.
-            rootSearchProviders.setCore { query in
+            // The coordinator ranks native core results and extension candidates as one list, so the
+            // native ranker takes the providers' rows as extras rather than being asked twice.
+            rootSearchProviders.setCore { query, extras in
                 self.appIndex.orderedResults(
                     query: query, visibility: self.visibility, favorites: self.favorites,
-                    hotKeys: self.hotKeys)
+                    hotKeys: self.hotKeys, folding: extras)
             }
-            // The real movie provider: a resident JS session loading the movie bundle.
-            let bundle = MovieProviderBundle.location
-            if FileManager.default.fileExists(atPath: bundle.path) {
+            // Every root-search provider found: one resident JS session each, keyed by the bundle's own
+            // name. Absent bundles simply aren't registered, so a tree without one still launches.
+            for bundle in ProviderBundles.all {
                 rootSearchProviders.register(
                     JSRootSearchProvider(host: RootSearchProviderHost(
-                        providerID: "movies", bundleURL: bundle)))
+                        providerID: bundle.id, bundleURL: bundle.url)))
             }
             clipboardCoordinator.applyEnabled()
             extensions.start(appIndex: appIndex, coordinator: extensionCoordinator)

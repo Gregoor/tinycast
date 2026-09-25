@@ -109,8 +109,79 @@ struct RankingTest {
         ])
         check("an import keeps only live, keyed entries", Array(store.visits.keys) == ["kept"])
 
+        // MARK: - Folding a provider's rows into the ordering
+
+        // A provider's rows reach the ranker as ordinary entries: they need a searchable profile and a
+        // strength of their own. These stand in for one, since the row type itself lives in AppIndex.
+        struct Row {
+            let name: String
+            let search: SearchProfile
+            let priority: Int
+        }
+        func row(_ name: String, priority: Int = 0) -> Row {
+            Row(
+                name: name, search: EntryNaming.profile(for: EntryNaming.Sources(name: name)),
+                priority: priority)
+        }
+        func rankedNames(_ rows: [Row], _ query: String, keepingUnmatched: Bool = false) -> [String] {
+            LauncherOrder.ranked(
+                rows, query: LauncherOrder.Query(query), sensitivity: .high, limit: 10, profile: \.search,
+                signals: {
+                    LauncherOrder.Signals(
+                        alias: nil, usage: usage("row"), priority: $0.priority, title: $0.name)
+                }, keepingUnmatched: keepingUnmatched
+            ).map(\.name)
+        }
+
+        check(
+            "a row the query cannot place is dropped",
+            rankedNames([row("Sydney Sweeney")], "zzz").isEmpty)
+        check(
+            "...and kept in the tail when the caller picked the rows itself",
+            rankedNames([row("Sydney Sweeney")], "zzz", keepingUnmatched: true) == ["Sydney Sweeney"])
+
+        // Equal match strength, so collation alone would put Dune first: the provider's own strength is
+        // the only thing left to separate them, which is what ranks its rows by popularity.
+        let strengths = [row("Dune", priority: -1000), row("Dust", priority: -1)]
+        check(
+            "a provider's own strength orders rows the query cannot separate",
+            rankedNames(strengths, "du") == ["Dust", "Dune"])
+
         await store.flush()
         try? FileManager.default.removeItem(at: fileURL)
+
+        // MARK: - Provider timings
+
+        let timingsURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("tinycast-timings-\(UUID().uuidString).json")
+        var timingClock = Date(timeIntervalSince1970: 2_000_000_000)
+        let timings = ProviderTimingStore(fileURL: timingsURL) { timingClock }
+
+        check("a provider that has not answered has no timings", timings.stats(for: "movies") == nil)
+        for value in [10.0, 20, 30, 40, 1000] {
+            timings.record(providerID: "movies", milliseconds: value)
+        }
+        check("the average is the mean", near(timings.stats(for: "movies")?.average ?? 0, 220))
+        // Nearest rank: a p95 is only ever a value that was actually observed, never an interpolation.
+        check("p95 is an observed sample", timings.stats(for: "movies")?.p95 == 1000)
+        check("p99 of five samples is the largest", timings.stats(for: "movies")?.p99 == 1000)
+        check("a negative answer is refused", {
+            timings.record(providerID: "tv", milliseconds: -1)
+            return timings.stats(for: "tv") == nil
+        }())
+
+        for value in 0..<250 { timings.record(providerID: "tv", milliseconds: Double(value)) }
+        check("the count is every answer", timings.stats(for: "tv")?.count == 250)
+        check("the average comes from the retained samples only",
+            near(timings.stats(for: "tv")?.average ?? 0, 149.5))
+
+        // The file, not the memory, is what Settings reads after a relaunch.
+        timingClock = timingClock.addingTimeInterval(60)
+        await timings.flush()
+        let reloadedTimings = ProviderTimingStore(fileURL: timingsURL) { timingClock }
+        check("timings survive a relaunch", reloadedTimings.stats(for: "tv")?.count == 250)
+        check("...with their percentiles", reloadedTimings.stats(for: "tv")?.p95 == 239)
+        try? FileManager.default.removeItem(at: timingsURL)
 
         print(failures == 0 ? "\nALL PASSED" : "\n\(failures) FAILED")
         exit(failures == 0 ? 0 : 1)

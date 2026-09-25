@@ -191,9 +191,10 @@ globalThis.__tinycast = {
     return runRootSearchQuery(providerId, query, limit, requestId);
   },
 
-  /// Swift→JS: run a selected candidate's default action.
-  rootSearchPerform(sessionId, providerId, resultId) {
-    return runRootSearchPerform(providerId, resultId);
+  /// Swift→JS: run one of a selected candidate's actions. Absent means the first, which is the
+  /// default — Raycast's own convention for an action list.
+  rootSearchPerform(sessionId, providerId, resultId, actionId) {
+    return runRootSearchPerform(providerId, resultId, actionId);
   },
 
   stop(sessionId) {

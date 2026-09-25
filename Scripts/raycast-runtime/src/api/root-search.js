@@ -4,7 +4,8 @@
 // An extension calls `registerRootSearchProvider({ id, search, perform })` from a command's default
 // export. While that command's session stays mounted (Tinycast keeps a mounted session resident
 // across keystrokes), Swift asks `search(query, { limit, signal })` per root-query keystroke and
-// routes activation of a returned candidate to `perform(resultId)`.
+// routes activation of a returned candidate to `perform(resultId, actionId)`, where `actionId` is one
+// of the actions the candidate itself listed — `undefined` for the first, which is the default.
 
 import { hostCall } from "../host.js";
 
@@ -56,12 +57,15 @@ export function runRootSearchQuery(providerID, query, limit, requestId) {
   }
 }
 
-/// Swift→JS: run the default action for a selected candidate.
-export function runRootSearchPerform(providerID, resultID) {
+/// Swift→JS: run one of a candidate's actions. The id is what Swift holds — Raycast's `Action` carries
+/// its own closure, which cannot cross this boundary — and a provider routes on the action it named.
+/// Raycast's first action is the default, so no id means that one.
+export function runRootSearchPerform(providerID, resultID, actionID) {
   const provider = registered.get(String(providerID));
   if (!provider?.perform) return "0";
   try {
-    Promise.resolve(provider.perform(String(resultID))).catch(() => {});
+    const action = actionID == null || actionID === "" ? undefined : String(actionID);
+    Promise.resolve(provider.perform(String(resultID), action)).catch(() => {});
     return "1";
   } catch {
     return "1";
@@ -79,7 +83,30 @@ function normalizeCandidates(candidates) {
       subtitle: typeof c.subtitle === "string" ? c.subtitle : undefined,
       keywords: Array.isArray(c.keywords) ? c.keywords.filter((k) => typeof k === "string") : [],
       posterURL: typeof c.posterURL === "string" ? c.posterURL : undefined,
+      // A row icon shipped beside the provider's bundle, relative to it. The host resolves it inside
+      // that directory only, so an absolute path or a `..` never reaches the app.
+      iconPath: typeof c.iconPath === "string" ? c.iconPath : undefined,
       label: typeof c.label === "string" ? c.label : undefined,
+      // The provider's own strength for this row, 0…1, ordering its rows against each other on the app
+      // side. Only a finite number crosses; anything else ranks as the weakest.
+      score: Number.isFinite(c.score) ? c.score : undefined,
+      // A candidate's `actions`, in `ActionPanel`'s vocabulary: a title, an optional icon and chord,
+      // and where a new section begins. Swift builds the panel from these; the ids route back here.
+      actions: normalizeActions(c.actions),
+    }));
+}
+
+/// Coerce a candidate's actions, dropping malformed ones rather than failing the query.
+function normalizeActions(actions) {
+  if (!Array.isArray(actions)) return [];
+  return actions
+    .filter((a) => a && typeof a === "object" && typeof a.id === "string" && typeof a.title === "string")
+    .map((a) => ({
+      id: a.id,
+      title: a.title,
+      icon: typeof a.icon === "string" ? a.icon : undefined,
+      shortcut: typeof a.shortcut === "string" ? a.shortcut : undefined,
+      startsSection: a.startsSection === true,
     }));
 }
 

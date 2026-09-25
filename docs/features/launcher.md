@@ -9,6 +9,10 @@ earliest scope wins).
   `VisibilityStore` category and per Settings pane — never re-derive a category by sniffing an entry ID.
   A new category means a new case, a slice in `AppIndex.publishEntries()`, and the matching filter in
   `LauncherList.rows`, in that order.
+- **A root-search provider's row is ranked, not appended.** `RootSearchProviders` hands it to the same
+  `LauncherOrder` pass as every app — its title as the searchable name, its keywords as alternates, its
+  own `score` in a band below every `KindDescriptor.rankPriority`. So relevance decides against native
+  rows, the provider's own strength decides between its rows, and a full tie still goes to the app.
 - **A category's switch is a master switch, not a list filter.** `VisibilityStore.isKindEnabled` gates
   `orderedResults` *and* `HotKeyManager.perform`, so `Enable Applications` off stops the per-app chords
   as well as the rows — the guard sits in the one dispatch funnel, the way each feature switch already
@@ -150,6 +154,34 @@ the Zed app: rule 3 only protects an exact title past three characters.
 `settings` is the case these were measured against. Apple declares `Settings` in System Settings'
 `CFBundleAlternateNames`, so it is an exact alternate title and wins rule 3; the command is named
 `Tinycast Settings`, like About, Quit and Support Tinycast, so nothing ties it there.
+
+## Root-search candidates
+
+An extension can register a **root-search provider**: a resident JS session that answers every query
+with up to `resultCap` transient candidates. They are `AppEntry`s only for the query at hand
+(`id: "root-search:<provider>:<candidate>"`, `kind: .extensionResult`) and nothing about them is
+persisted, learned, pinned or hidden.
+
+- **Below `minimumQueryLength` no provider is asked**, so a two-character query settles immediately on
+  the native core alone.
+- **A cold provider answers nothing and the next query answers instead.** The first query boots it in
+  the background — a boot mounts a corpus, and possibly syncs one — because no keystroke can wait. The
+  launcher warms them as it opens, so the first query is usually not that query.
+- **The frame goes out once every provider has answered, or after `settleMs` (100 ms), whichever comes
+  first**, carrying whatever arrived in time. **A provider that answers after that is appended to the end
+  of the list, never ranked into it**: one that takes a second must not push a row in above results the
+  user is already reading. A stale generation is dropped whole.
+- **Providers boot as the palette opens, and are released ten seconds after it closes.** A mount is the
+  largest thing held for the launcher, so it comes up on open rather than on the first query, and a
+  reopen inside the grace window keeps it instead of mounting again. `releaseAll` then lets it go and
+  returns the pages.
+- **Every completed answer is timed.** One that lands after the user typed again is dropped, so the
+  numbers describe queries that finished rather than every keystroke that asked;
+  `ProviderTimingStore` keeps the last 200 per provider, and Settings reports the average, p95 and p99.
+- **Activation routes back to the provider's own `perform`**, and ⌘K's items are the actions the
+  candidate listed — the first is the default, so ↵ runs it without a separate concept.
+- **Closing the palette releases the providers** and lets one in-flight activation finish first: a
+  teardown mid-`perform` kills the host call the provider is waiting on, so the row does nothing.
 
 ## One fold, everywhere
 

@@ -133,7 +133,9 @@ run index file-search-performance Tinycast/Platform/Signposts.swift \
                            Tinycast/Features/FileSearch/Model/*.swift \
                            Tinycast/Features/FileSearch/Service/FileSearchService.swift
 run ranking-test           $L/SearchRelevance.swift $L/ScriptRomanization.swift \
-                           $L/LauncherMatch.swift $L/LauncherRankingStore.swift
+                           $L/LauncherMatch.swift $L/LauncherRankingStore.swift \
+                           $L/ProviderTimingStore.swift \
+                           $L/EntryNaming.swift $L/LauncherOrder.swift
 run scopes-test            $L/SearchScopes.swift
 run app-name-test          Tinycast/Platform/AppDisplayName.swift \
                            Tinycast/Platform/BundleLocalization.swift \

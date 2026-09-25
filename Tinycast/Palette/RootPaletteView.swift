@@ -367,13 +367,12 @@ struct RootPaletteView: View {
             // A preserved screen re-summons as it was left, so a menu must end with the palette.
             .modifier(PaletteHideObserver { if menuOpen { closeMenus() } })
             .onChange(of: vm.isVisible) {
-                // A root-search provider mounts its corpus for the palette's lifetime only: warm as it
-                // opens, so the boot overlaps with typing, and release as it closes, so its index isn't
-                // held while the palette is away.
+                // A root-search provider holds its index while the palette is up, and for a short grace
+                // period after it closes so reopening does not mount it again.
                 if vm.isVisible {
-                    Task { await core.rootSearchProviders.warmAll() }
+                    core.rootSearchProviders.paletteOpened()
                 } else {
-                    Task { await core.rootSearchProviders.releaseAll() }
+                    core.rootSearchProviders.paletteClosed()
                 }
             }
             .onChange(of: vm.query) {

@@ -30,9 +30,12 @@ enum LauncherOrder {
         var boostedTerms: Set<String> = []
     }
 
+    /// `keepingUnmatched` keeps an item the query cannot place, in the tail, instead of dropping it.
+    /// That is for rows something else already picked — a provider's own index answered for them — so
+    /// Tinycast decides where they sit, never whether they appear.
     static func ranked<Item>(
         _ items: [Item], query: Query, sensitivity: SearchSensitivity, limit: Int,
-        profile: (Item) -> SearchProfile, signals: (Item) -> Signals
+        profile: (Item) -> SearchProfile, signals: (Item) -> Signals, keepingUnmatched: Bool = false
     ) -> [Item] {
         guard !query.isEmpty else { return [] }
         let scored = items.enumerated().compactMap { position, item -> (Item, Candidate)? in
@@ -40,7 +43,10 @@ enum LauncherOrder {
             guard
                 let facts = Facts(
                     profile: profile(item), signals: signals, query: query, sensitivity: sensitivity)
-            else { return nil }
+            else {
+                guard keepingUnmatched else { return nil }
+                return (item, Candidate(facts: nil, signals: signals, position: position))
+            }
             return (item, Candidate(facts: facts, signals: signals, position: position))
         }
         let length = query.latin.units.count

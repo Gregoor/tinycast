@@ -141,6 +141,7 @@ struct ExtensionsSettingsView: View {
                             if index > 0 || !matching.isEmpty { Divider() }
                             RootSearchProviderRow(
                                 id: id, status: indexStatuses[id],
+                                timing: core.rootSearchProviders.timings.stats(for: id),
                                 isExpanded: expanded == providerKey(id),
                                 onToggle: {
                                     expanded = expanded == providerKey(id) ? nil : providerKey(id)
@@ -412,6 +413,8 @@ private struct RatingsSourceRow: View {
 private struct RootSearchProviderRow: View {
     let id: String
     let status: RootSearchIndexStatus?
+    /// How long this provider takes to answer, or nil until it has answered once.
+    let timing: ProviderTimingStore.Stats?
     let isExpanded: Bool
     let onToggle: () -> Void
 
@@ -459,6 +462,13 @@ private struct RootSearchProviderRow: View {
         return "Search provider · \(status.publishedAt.formatted(date: .abbreviated, time: .omitted))"
     }
 
+    /// A timing, in the unit that reads best: sub-10 ms answers are the interesting end, and a rounded
+    /// integer would erase the difference between them.
+    private func milliseconds(_ value: Double?) -> String {
+        guard let value else { return "—" }
+        return value < 10 ? String(format: "%.1f ms", value) : "\(Int(value.rounded())) ms"
+    }
+
     private var settings: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
             Grid(
@@ -473,6 +483,21 @@ private struct RootSearchProviderRow: View {
                 rule
                 heading("Index")
                 SettingsCardRow(title: "Last published", detail: published) {
+                    EmptyView()
+                }
+                rule
+                heading("Speed")
+                // What a provider costs when you wait for it: a superseded answer is not recorded, so
+                // these describe queries that finished rather than every keystroke that asked.
+                SettingsCardRow(title: "Average", detail: milliseconds(timing?.average)) {
+                    EmptyView()
+                }
+                SettingsCardRow(title: "p95", detail: milliseconds(timing?.p95)) { EmptyView() }
+                SettingsCardRow(title: "p99", detail: milliseconds(timing?.p99)) { EmptyView() }
+                SettingsCardRow(
+                    title: "Answered",
+                    detail: timing.map { "\($0.count) queries" } ?? "None recorded yet"
+                ) {
                     EmptyView()
                 }
             }

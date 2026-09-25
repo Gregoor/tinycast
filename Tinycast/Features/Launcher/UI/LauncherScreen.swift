@@ -228,6 +228,10 @@ struct LauncherScreen: PaletteScreen {
         case .meeting(let meeting):
             return MeetingActionsMenu.content(meeting: meeting, core: core)
         case .entry(let app):
+            // A provider names the actions for its own rows; everything else keeps the launcher's menu.
+            if let items = core.rootSearchProviders.actionItems(for: app) {
+                return PopoverMenuContent(header: app.name, items: items)
+            }
             return AppActionsMenu.content(
                 app: app, searchQuery: vm.query, core: core, running: running,
                 favorites: favoriteActions(for: app, at: selection),

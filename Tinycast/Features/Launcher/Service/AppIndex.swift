@@ -138,6 +138,10 @@ struct AppEntry: Identifiable, Hashable, Sendable {
     var iconOverride: EntryIcon?
     /// What this entry comes from — an extension's title. Labels the row; ranks as a subtitle.
     var ownerName: String?
+    /// A root-search provider's own strength for a transient row, 0…1, ordering it against that
+    /// provider's other rows only — see `rankPriority(for:)`. Nil everywhere else, which is every
+    /// persisted entry.
+    var providerScore: Double?
     /// When it landed on disk, so a fresh install can be suggested before its first open.
     var installedAt: Date?
     /// The searchable form of every field above, built at publish by `buildSearchProfile`.
@@ -650,8 +654,11 @@ final class AppIndex {
         entriesRevision &+= 1
     }
 
+    /// How many rows one query ranks and shows, and the cap the folded frame keeps.
+    private static let rowLimit = 200
+
     /// Ranked matches, or a whole category when the query names one. Empty returns the full list.
-    func matches(_ query: String, limit: Int = 200) -> [AppEntry] {
+    func matches(_ query: String, limit: Int = AppIndex.rowLimit) -> [AppEntry] {
         let q = query.trimmingCharacters(in: .whitespaces)
         guard !q.isEmpty else { return apps }
         return matchMemo.value(for: matchKey(q)) {
@@ -692,6 +699,25 @@ final class AppIndex {
                 entries: split.favorites + suggested + rest, favoriteCount: split.favorites.count,
                 suggestionCount: suggested.count)
         }
+    }
+
+    /// The same frame with a provider's transient rows folded into the ordering instead of appended
+    /// after it, so a provider's hit competes on the query rather than trailing every native row.
+    /// Rows the matcher cannot place keep provider order, in the tail.
+    func orderedResults(
+        query: String, visibility: VisibilityStore, favorites: FavoritesStore, hotKeys: HotKeyManager,
+        folding extras: [AppEntry]
+    ) -> Results {
+        let core = orderedResults(
+            query: query, visibility: visibility, favorites: favorites, hotKeys: hotKeys)
+        guard !extras.isEmpty else { return core }
+        let usage = ranking.snapshot()
+        let entries = LauncherOrder.ranked(
+            core.entries + extras, query: LauncherOrder.Query(query.trimmingCharacters(in: .whitespaces)),
+            sensitivity: sensitivity, limit: Self.rowLimit, profile: \.search,
+            signals: { self.signals(for: $0, usage: usage) }, keepingUnmatched: true)
+        return Results(
+            entries: entries, favoriteCount: core.favoriteCount, suggestionCount: core.suggestionCount)
     }
 
     private var sensitivity: SearchSensitivity { settings?.rootSearchSensitivity ?? .high }
@@ -753,7 +779,15 @@ final class AppIndex {
         LauncherOrder.Signals(
             alias: aliases.alias(for: entry.preferenceKey).map { SearchText($0, transliterated: false) },
             usage: usage.usage(for: entry.preferenceKey),
-            priority: entry.kind.descriptor.rankPriority, title: entry.name,
+            priority: Self.rankPriority(for: entry), title: entry.name,
             boostedTerms: CommandCatalog.command(for: entry)?.boostedTerms ?? [])
+    }
+
+    /// A provider row's own strength decides, because every provider row shares `.extensionResult` and
+    /// would otherwise order by nothing but title collation. The band sits below every native kind, so
+    /// a query that cannot tell two rows apart still prefers the app.
+    private static func rankPriority(for entry: AppEntry) -> Int {
+        guard let score = entry.providerScore else { return entry.kind.descriptor.rankPriority }
+        return -1000 + Int((min(max(score, 0), 1) * 999).rounded())
     }
 }

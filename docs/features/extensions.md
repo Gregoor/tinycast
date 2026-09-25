@@ -133,6 +133,7 @@ Two host-call flavours:
 | `Service/ExtensionManager.swift` | the single owner: installed set, foreground session, no-view refreshes, menu-bar manager, launcher entries |
 | `Service/ExtensionMenuBarManager.swift` | serialized refreshes, short-lived menu sessions and their deadlines |
 | `Service/ExtensionMenuBarHost.swift` | immutable per-session namespace and menu-specific host behavior |
+| `Service/RootSearchProviderHost.swift` | a resident root-search provider: its session, its query mailbox and its activation routing |
 | `UI/ExtensionMenuBarController.swift` | native `NSStatusItem` and `NSMenu` rendering and dispatch |
 | `UI/ExtensionMenuBarImage.swift` | small native icons with light/dark variants |
 | `Model/ExtensionManifest.swift` | `package.json` → commands, preferences, arguments |
@@ -166,6 +167,45 @@ both, and as a bonus no module-level state in an extension bundle survives into 
 Each runtime owns its bridge. Foreground calls use `ExtensionManager.activeExtensionName`; a menu
 bridge uses `ExtensionMenuBarHost`'s captured extension name. A late response cannot settle a call
 in another context, even if JavaScript reused its numeric call ID.
+
+## Root-search providers
+
+An extension can contribute launcher results without rendering anything. It registers one hook and the
+runtime keeps the bundle resident, asking it for candidates on every query:
+
+```js
+import { registerRootSearchProvider, open } from "@tinycast/api";
+
+registerRootSearchProvider({
+  id: "wikipedia",
+  async search(query, { limit }) { … },
+  async perform(resultID, actionID) { … },
+});
+```
+
+`@tinycast/api` is exactly these two symbols — no React, no storage, no `fetch`. A provider is
+restricted at the **API** level rather than the module level: its bridge answers `rootSearch.*` and
+`system.open` and refuses everything else, so a bundle reaches nothing but its own `perform`. The Node
+built-ins are still provided, which is how an index gets downloaded with `curl`.
+
+| Candidate field | Meaning |
+| --- | --- |
+| `id`, `title` | Required. The provider's own item id, echoed back on activation, and the row's name. |
+| `subtitle` | The dimmed text beside the name. Never ranked as strongly as the title. |
+| `keywords` | Lower-trust searchable text — an original title, a director — ranked as alternates. |
+| `posterURL` | Streamed into the row icon asynchronously, never on the render path. |
+| `iconPath` | An image beside the provider's own bundle, named relative to it. The host resolves it inside that directory and refuses anything outside, so an absolute path or a `..` never reaches the app. Drawn synchronously, so it wins over `posterURL`. |
+| `label` | The row's kind label ("Movie"). Nil falls back to the provider id, capitalized. |
+| `actions` | ⌘K's items, each `{ id, title, icon?, shortcut?, startsSection? }`. |
+| `score` | The provider's own strength on 0…1, ordering its rows against each other. |
+
+**An action carries an `id`, not a closure.** Raycast's `Action` holds its own closure, which cannot
+cross into Swift — so the app builds the menu from the labels and hands the id back to `perform`.
+Raycast's convention holds: **the first action is the default**, so ↵ needs no separate concept.
+
+**`score` is provider-relative, never compared across providers** — the scales don't correspond. Swift
+maps it into a rank band below every native kind, so relevance decides a provider's row against the
+launcher's own rows and `score` decides between that provider's rows.
 
 ## Menu bar commands
 

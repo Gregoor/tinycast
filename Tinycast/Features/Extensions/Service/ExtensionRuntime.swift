@@ -178,12 +178,12 @@ final class ExtensionRuntime: @unchecked Sendable {
     /// Swift→JS: run the selected candidate's default action. The JS `rootSearchPerform(sessionId,
     /// providerId, resultId)` takes a session first (unused here); Swift has no session for this host,
     /// so it passes an empty first arg to keep `providerID`/`resultID` aligned.
-    func fireRootSearchPerform(providerID: String, resultID: String) async {
+    func fireRootSearchPerform(providerID: String, resultID: String, actionID: String?) async {
         await onQueue { context in
             _ = context.objectForKeyedSubscript("__tinycast")?
                 .invokeMethod(
                     "rootSearchPerform",
-                    withArguments: ["", providerID, resultID])
+                    withArguments: ["", providerID, resultID, actionID ?? NSNull()])
         }
     }
 

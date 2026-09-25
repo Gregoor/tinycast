@@ -119,22 +119,32 @@ function syncHost(api, method, args) {
 // `perform` records into a JS global so the outer harness can read it back (the vm context is not
 // the outer scope).
 const source = `
-import { registerRootSearchProvider } from "@tinycast/api";
+import { registerRootSearchProvider, open } from "@tinycast/api";
 export default async function command() {
   registerRootSearchProvider({
     id: "movies",
     async search(query, { limit }) {
       if (query === "matrix") {
         return [
-          { id: "tmdb:603", title: "The Matrix", subtitle: "1999", keywords: ["Wachowski"] },
-          { id: "tmdb:604", title: "The Matrix Reloaded", subtitle: "2003" },
+          {
+            id: "tmdb:603", title: "The Matrix", subtitle: "1999", keywords: ["Wachowski"],
+            score: 0.82, iconPath: "probe.png",
+            actions: [
+              { id: "open", title: "Open Result" },
+              { id: "de", title: "Open in German", shortcut: "⌘1", startsSection: true },
+              { id: "es", title: "Open in Spanish", shortcut: "⌘2" },
+            ],
+          },
+          { id: "tmdb:604", title: "The Matrix Reloaded", subtitle: "2003", score: "high" },
         ].slice(0, limit ?? 10);
       }
       if (query === "error") throw new Error("boom");
       return [];
     },
-    async perform(resultId) {
+    async perform(resultId, actionId) {
       globalThis.__performed = resultId;
+      globalThis.__performedAction = actionId ?? null;
+      await open("https://example.test/wiki/" + resultId, "Safari");
     },
   });
 }
@@ -162,6 +172,25 @@ async function main() {
   check("results[0] is The Matrix", matrix?.candidates?.[0]?.title === "The Matrix", JSON.stringify(matrix?.candidates));
   check("subtitle + keywords carried", matrix?.candidates?.[0]?.subtitle === "1999" && matrix?.candidates?.[0]?.keywords?.[0] === "Wachowski");
   check("limit honoured (2 returned)", matrix?.candidates?.length === 2, String(matrix?.candidates?.length));
+  check("candidate actions carried with their fields",
+    matrix?.candidates?.[0]?.actions?.[0]?.title === "Open Result"
+      && matrix?.candidates?.[0]?.actions?.[1]?.id === "de"
+      && matrix?.candidates?.[0]?.actions?.[1]?.shortcut === "⌘1"
+      && matrix?.candidates?.[0]?.actions?.[1]?.startsSection === true
+      && matrix?.candidates?.[0]?.actions?.[2]?.startsSection === false,
+    JSON.stringify(matrix?.candidates?.[0]?.actions));
+  check("a candidate with no actions carries an empty list",
+    Array.isArray(matrix?.candidates?.[1]?.actions) && matrix.candidates[1].actions.length === 0,
+    JSON.stringify(matrix?.candidates?.[1]?.actions));
+  // A provider's own strength rides along so Swift can order that provider's rows by it; a non-number
+  // is dropped rather than decoded into a rank.
+  check("candidate score carried, and a non-number dropped",
+    matrix?.candidates?.[0]?.score === 0.82 && matrix?.candidates?.[1]?.score === undefined,
+    JSON.stringify(matrix?.candidates?.map((c) => c.score)));
+  // The row's own icon, as a path the host resolves inside the provider's own directory.
+  check("candidate icon path carried",
+    matrix?.candidates?.[0]?.iconPath === "probe.png" && matrix?.candidates?.[1]?.iconPath === undefined,
+    JSON.stringify(matrix?.candidates?.map((c) => c.iconPath)));
 
   // A provider that throws must still reply (no candidates, an error string), not hang.
   harness.call(`__tinycast.rootSearchQuery("s1", "movies", "error", 10, "req-2")`);
@@ -169,10 +198,21 @@ async function main() {
   const errored = hostState.results.find((r) => r.requestId === "req-2");
   check("throwing search replies with an error", typeof errored?.error === "string", JSON.stringify(errored));
 
-  // Activation routes through perform.
+  // Activation routes through perform, and an action id reaches it: Swift passes one for a menu row
+  // and nothing for the default, which is the first action the candidate listed.
   harness.call(`__tinycast.rootSearchPerform("s1", "movies", "tmdb:603")`);
   await accept(300);
   check("perform routed resultId", harness.call("globalThis.__performed") === "tmdb:603");
+  check("no action id means the provider's default", harness.call("globalThis.__performedAction") === null);
+
+  harness.call(`__tinycast.rootSearchPerform("s1", "movies", "tmdb:603", "de")`);
+  await accept(300);
+  check("a named action reaches perform", harness.call("globalThis.__performedAction") === "de");
+  check("...for the same result", harness.call("globalThis.__performed") === "tmdb:603");
+  // The last link between a provider naming a URL and the app opening it. Nothing else covers it: the
+  // Node harness stubs the api module, so only this one runs the real `open`.
+  check("a provider's open reaches the host as system.open",
+    harness.state.hostCalls.includes("system.open"), harness.state.hostCalls.join(","));
 
   // Unknown provider id is a quiet no-op, not a crash.
   harness.call(`__tinycast.rootSearchQuery("s1", "ghost", "x", 10, "req-3")`);

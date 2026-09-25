@@ -149,7 +149,8 @@ final class LauncherCoordinator {
             let snippetID = String(app.id.dropFirst("snippet:".count))
             snippetCoordinator.expandSnippet(id: snippetID, target: previous)
         case .extensionResult:
-            Task { await core.rootSearchProviders.perform(entry: app) }
+            // Owned by the registry: a bare Task here races the provider release a close triggers.
+            core.rootSearchProviders.activate(entry: app)
         case .command, .quickAction, .customCommand, .systemAction, .windowCommand, .windowLayout,
             .quicklink, .appleShortcut, .extensionCommand, .meeting:
             break  // handled above

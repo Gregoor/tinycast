@@ -67,6 +67,9 @@ final class RootSearchProviderHost {
     var isStarted: Bool { started }
     var providerIDValue: String { providerID }
 
+    /// The directory the provider's bundle lives in — the only place its own assets can come from.
+    var providerDirectory: URL { bundleURL.deletingLastPathComponent() }
+
     /// Boot the runtime and load the provider bundle. Called after `init` completes so `self` never
     /// escapes half-built.
     func start() async throws {
@@ -86,7 +89,7 @@ final class RootSearchProviderHost {
             supportPath: supportDirectory.path,
             preferences: [:], caches: [:], arguments: [:], fallbackText: nil,
             isDarkAppearance: NSApp.effectiveAppearance.isDark)
-        try await built.start(
+        await built.start(
             session: "resident-provider", code: code, file: bundleURL,
             mode: .noView, context: launch)
         runtime = built
@@ -98,13 +101,9 @@ final class RootSearchProviderHost {
     func candidates(for query: String, limit: Int) async -> Reply {
         guard started, let runtime else { return Reply(candidates: [], error: "provider not started") }
         let requestID = Self.nextRequestID(&nextRequestID)
-        do {
-            try await runtime.fireRootSearchQuery(
-                session: "resident-provider", providerID: providerID,
-                query: query, limit: limit, requestID: requestID)
-        } catch {
-            return Reply(candidates: [], error: "dispatch failed: \(error.localizedDescription)")
-        }
+        await runtime.fireRootSearchQuery(
+            session: "resident-provider", providerID: providerID,
+            query: query, limit: limit, requestID: requestID)
         return await withCheckedContinuation { continuation in
             // If the reply already landed (instant JS), hand it over; else register the waiter.
             if let slot = slots[requestID] {
@@ -121,11 +120,12 @@ final class RootSearchProviderHost {
     }
 
     /// Route activation to the JS provider's `perform`.
-    func perform(resultID: String) async {
+    /// `actionID` names one of the actions the candidate listed; nil is the provider's default, which
+    /// is the first it offered.
+    func perform(resultID: String, actionID: String?) async {
         guard started, let runtime else { return }
-        do {
-            try await runtime.fireRootSearchPerform(providerID: providerID, resultID: resultID)
-        } catch {}
+        await runtime.fireRootSearchPerform(
+            providerID: providerID, resultID: resultID, actionID: actionID)
     }
 
     /// The host bridge calls this when the JS side reports results for a request: resume the waiter,
@@ -202,7 +202,8 @@ final class RootSearchHostBridge: ExtensionHostAPI {
             }
             host.resolve(
                 requestID: requestID,
-                candidates: Self.decode((arguments[safe: 1]?.arrayValue ?? [])),
+                candidates: Self.decode(
+                    (arguments[safe: 1]?.arrayValue ?? []), iconBase: host.providerDirectory),
                 error: arguments[safe: 2]?.stringValue)
             return #"{"ok":true}"#
         default:
@@ -212,8 +213,9 @@ final class RootSearchHostBridge: ExtensionHostAPI {
 
     func sessionEnded() {}
 
-    /// Decode the `[{id,title,subtitle?,keywords?,posterURL?}]` JS array into Sendable candidates.
-    private static func decode(_ items: [RenderValue]) -> [RootSearchCandidate] {
+    /// Decode the `[{id,title,subtitle?,keywords?,posterURL?,iconPath?}]` JS array into Sendable
+    /// candidates. `iconBase` is the provider's own directory, the only place a row icon may come from.
+    private static func decode(_ items: [RenderValue], iconBase: URL?) -> [RootSearchCandidate] {
         items.compactMap { item -> RootSearchCandidate? in
             let fields = item.objectValue ?? [:]
             guard let id = fields["id"]?.stringValue, let title = fields["title"]?.stringValue else {
@@ -225,7 +227,36 @@ final class RootSearchHostBridge: ExtensionHostAPI {
                 subtitle: fields["subtitle"]?.stringValue,
                 keywords: fields["keywords"]?.arrayValue?.compactMap { $0.stringValue } ?? [],
                 posterURL: poster,
-                label: fields["label"]?.stringValue)
+                iconPath: Self.iconPath(fields["iconPath"]?.stringValue, base: iconBase),
+                label: fields["label"]?.stringValue,
+                actions: Self.decodeActions(fields["actions"]?.arrayValue ?? []),
+                score: fields["score"]?.doubleValue)
+        }
+    }
+
+    /// A provider names its icon relative to its own directory, and only there: an absolute path or a
+    /// `..` would make a row icon a way to reach a file the provider was never given.
+    private static func iconPath(_ path: String?, base: URL?) -> String? {
+        guard let path, !path.isEmpty, let base else { return nil }
+        let root = base.standardizedFileURL
+        let target = root.appendingPathComponent(path).standardizedFileURL
+        return target.path.hasPrefix(root.path + "/") ? target.path : nil
+    }
+
+    /// A candidate's `actions`, in the vocabulary an extension's own `ActionPanel` uses: a title, an
+    /// optional glyph and chord, and where a new section begins. Malformed ones are dropped rather
+    /// than failing the query, as the candidates themselves are.
+    private static func decodeActions(_ items: [RenderValue]) -> [RootSearchAction] {
+        items.compactMap { item -> RootSearchAction? in
+            let fields = item.objectValue ?? [:]
+            guard let id = fields["id"]?.stringValue, let title = fields["title"]?.stringValue else {
+                return nil
+            }
+            return RootSearchAction(
+                id: id, title: title,
+                icon: fields["icon"]?.stringValue,
+                shortcut: fields["shortcut"]?.stringValue,
+                startsSection: fields["startsSection"]?.boolValue ?? false)
         }
     }
 }
@@ -243,10 +274,12 @@ final class JSRootSearchProvider: RootSearchProvider {
 
     var id: String { host.providerIDValue }
 
+    /// The first query starts the session rather than waiting for it. A boot mounts an index and may
+    /// sync one — seconds of network — and nothing on a keystroke path can wait for that, so a cold
+    /// provider answers nothing here and answers the next query instead.
     func candidates(for query: String, limit: Int) async -> [RootSearchCandidate] {
-        do {
-            try await host.start()
-        } catch {
+        guard host.isStarted else {
+            start()
             return []
         }
         let reply = await host.candidates(for: query, limit: limit)
@@ -254,18 +287,31 @@ final class JSRootSearchProvider: RootSearchProvider {
         return reply.candidates
     }
 
-    func perform(resultID: String) async throws {
-        await host.perform(resultID: resultID)
+    func perform(resultID: String, actionID: String?) async throws {
+        await host.perform(resultID: resultID, actionID: actionID)
     }
 
-    /// Boot the session and let the provider mount its index, then throw the empty answer away. The
-    /// provider's own sync/open happens on any call, so an empty query is enough to warm it.
-    func warm() async {
-        _ = await candidates(for: "", limit: 0)
-    }
-
-    /// Drop the session and the mounted index. `warm()` mounts them again from the provider's cache.
+    /// Drop the session and the mounted index. The next query mounts them again from the provider's
+    /// cache.
     func release() async {
         host.stop()
+    }
+
+    private var isStarting = false
+
+    /// Boot the session while the launcher opens. The first query would start it anyway — a keystroke
+    /// later, and a mount is tens of milliseconds at best — so this is the same path, asked earlier.
+    func warm() {
+        start()
+    }
+
+    /// Unawaited, so a second keystroke before the boot finishes must not start a second one.
+    private func start() {
+        guard !isStarting else { return }
+        isStarting = true
+        Task {
+            defer { isStarting = false }
+            try? await host.start()
+        }
     }
 }
