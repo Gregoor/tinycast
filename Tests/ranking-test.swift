@@ -112,7 +112,8 @@ struct RankingTest {
         // MARK: - Folding a provider's rows into the ordering
 
         // A provider's rows reach the ranker as ordinary entries: they need a searchable profile and a
-        // strength of their own. These stand in for one, since the row type itself lives in AppIndex.
+        // priority of their own. These stand in for one, since the row type itself lives in AppIndex —
+        // and the priority is the one the app builds, through the same `LauncherPriority`.
         struct Row {
             let name: String
             let search: SearchProfile
@@ -122,6 +123,10 @@ struct RankingTest {
             Row(
                 name: name, search: EntryNaming.profile(for: EntryNaming.Sources(name: name)),
                 priority: priority)
+        }
+        /// One provider row, as `AppIndex` ranks it: its declared precedence, then its own score.
+        func providerRow(_ name: String, precedence: Int, score: Double) -> Row {
+            row(name, priority: LauncherPriority.provider(precedence: precedence, score: score))
         }
         func rankedNames(_ rows: [Row], _ query: String, keepingUnmatched: Bool = false) -> [String] {
             LauncherOrder.ranked(
@@ -140,12 +145,31 @@ struct RankingTest {
             "...and kept in the tail when the caller picked the rows itself",
             rankedNames([row("Sydney Sweeney")], "zzz", keepingUnmatched: true) == ["Sydney Sweeney"])
 
-        // Equal match strength, so collation alone would put Dune first: the provider's own strength is
-        // the only thing left to separate them, which is what ranks its rows by popularity.
-        let strengths = [row("Dune", priority: -1000), row("Dust", priority: -1)]
+        // "Dune" and "Dust" match "du" exactly as well as each other, so collation alone would put
+        // Dune first: within one precedence the provider's own strength is what ranks its rows by
+        // popularity.
         check(
-            "a provider's own strength orders rows the query cannot separate",
-            rankedNames(strengths, "du") == ["Dust", "Dune"])
+            "one provider's own strength orders its rows",
+            rankedNames(
+                [providerRow("Dune", precedence: 0, score: 0.2),
+                 providerRow("Dust", precedence: 0, score: 0.8)], "du") == ["Dust", "Dune"])
+
+        // A show and the encyclopedia article about it match a title equally, and each provider's own
+        // score is relative to its own matcher — 0.9 of one means nothing against 0.1 of the other. The
+        // declared precedence is what decides, so the show the user is after leads the article about it.
+        check(
+            "a declared precedence outranks another provider's stronger row",
+            rankedNames(
+                [providerRow("Dune", precedence: 1, score: 0.9),
+                 providerRow("Dust", precedence: 2, score: 0.1)], "du") == ["Dust", "Dune"])
+
+        // The band's whole point: however strong a provider row is, a query that cannot separate it
+        // from an app still prefers the app.
+        check(
+            "every provider row sits below the lowest native kind",
+            rankedNames(
+                [providerRow("Dune", precedence: LauncherPriority.maxProviderPrecedence, score: 1),
+                 row("Duz", priority: LauncherPriority.native(rank: 1))], "du") == ["Duz", "Dune"])
 
         await store.flush()
         try? FileManager.default.removeItem(at: fileURL)

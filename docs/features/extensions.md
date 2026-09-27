@@ -178,10 +178,19 @@ import { registerRootSearchProvider, open } from "@tinycast/api";
 
 registerRootSearchProvider({
   id: "wikipedia",
+  // Where this provider's rows sit among other providers' when a query cannot tell them apart: higher
+  // wins, and each provider's own candidate `score` only separates its own rows. Absent is 0.
+  precedence: 1,
   async search(query, { limit }) { … },
   async perform(resultID, actionID) { … },
 });
 ```
+
+A film and the encyclopedia article about it share a title, so the query cannot separate them — and a
+candidate `score` is relative to its own provider's matcher, which makes it meaningless against another
+provider's. The declared `precedence` is what decides there, which is why the movie provider declares a
+higher one than the wiki. Whatever a provider declares, the whole provider band stays below every
+native kind: a tie with an app still goes to the app.
 
 `@tinycast/api` is exactly these two symbols — no React, no storage, no `fetch`. A provider is
 restricted at the **API** level rather than the module level: its bridge answers `rootSearch.*` and
@@ -197,7 +206,7 @@ built-ins are still provided, which is how an index gets downloaded with `curl`.
 | `iconPath` | An image beside the provider's own bundle, named relative to it. The host resolves it inside that directory and refuses anything outside, so an absolute path or a `..` never reaches the app. Drawn synchronously, so it wins over `posterURL`. |
 | `label` | The row's kind label ("Movie"). Nil falls back to the provider id, capitalized. |
 | `actions` | ⌘K's items, each `{ id, title, icon?, shortcut?, startsSection? }`. |
-| `score` | The provider's own strength on 0…1, ordering its rows against each other. |
+| `score` | The provider's own strength on 0…1, ordering its rows against each other within its declared `precedence`. |
 
 **An action carries an `id`, not a closure.** Raycast's `Action` holds its own closure, which cannot
 cross into Swift — so the app builds the menu from the labels and hands the id back to `perform`.

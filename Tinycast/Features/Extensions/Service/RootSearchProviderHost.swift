@@ -6,9 +6,10 @@ import Foundation
 // The extension runtime tears a command down when it finishes, so a provider cannot rely on
 // `ExtensionManager.run`. This host keeps ONE `JSContext` alive while in use: it boots the runtime,
 // loads a compiled extension bundle whose entry calls `registerRootSearchProvider({ id, search,
-// perform })` from `@tinycast/api`, and keeps the session mounted. Swift then fires
-// `__tinycast.rootSearchQuery` into it and the reply — an async `rootSearch.results` host call from
-// the JS side — lands back on the main actor.
+// perform, precedence })` from `@tinycast/api`, and keeps the session mounted. The declared
+// precedence is kept here, because it is part of the registration rather than of any one query. Swift
+// then fires `__tinycast.rootSearchQuery` into it and the reply — an async `rootSearch.results` host
+// call from the JS side — lands back on the main actor.
 //
 // The wait is a "fire then register a waiter" mailbox (the Swift-concurrency rendezvous pattern):
 // `candidates` dispatches the query first (the runtime's `onQueue` returns once the JS has accepted
@@ -34,6 +35,10 @@ final class RootSearchProviderHost {
     let cacheDirectory: URL
     private var started = false
     private var nextRequestID = 1
+    /// The precedence the provider declared as it registered, ordering its rows against another
+    /// provider's — see `LauncherPriority`. 0 until it declares one, which is the band every provider
+    /// sat in before precedence existed.
+    private(set) var precedence = 0
 
     /// One request's wait or its already-published reply. A slot holds exactly one of the two:
     /// a waiter is resumed by a later publish; a published reply is handed to a later waiter.
@@ -69,6 +74,11 @@ final class RootSearchProviderHost {
 
     /// The directory the provider's bundle lives in — the only place its own assets can come from.
     var providerDirectory: URL { bundleURL.deletingLastPathComponent() }
+
+    /// The provider declared its precedence, once, as it registered.
+    func declare(precedence: Int?) {
+        self.precedence = precedence ?? 0
+    }
 
     /// Boot the runtime and load the provider bundle. Called after `init` completes so `self` never
     /// escapes half-built.
@@ -194,7 +204,13 @@ final class RootSearchHostBridge: ExtensionHostAPI {
 
     private func rootSearch(method: String, arguments: [RenderValue]) throws -> String {
         switch method {
-        case "register", "unregister":
+        case "register":
+            // The provider declares its precedence as it registers, in the same call that names it.
+            // Absent, or anything that is not a number, is no declaration: the provider keeps the band
+            // it has always had.
+            host?.declare(precedence: Self.decodedPrecedence(arguments[safe: 1]))
+            return #"{"ok":true}"#
+        case "unregister":
             return #"{"ok":true}"#
         case "results":
             guard let requestID = arguments.first?.stringValue, let host else {
@@ -232,6 +248,14 @@ final class RootSearchHostBridge: ExtensionHostAPI {
                 actions: Self.decodeActions(fields["actions"]?.arrayValue ?? []),
                 score: fields["score"]?.doubleValue)
         }
+    }
+
+    /// A declared precedence, as an integer. Anything a provider did not mean as one — absent, or not
+    /// a finite number — is no declaration at all. Bounded before the cast, which would trap on the
+    /// infinities a provider is free to send; the band decides where a value that extreme lands.
+    private static func decodedPrecedence(_ value: RenderValue?) -> Int? {
+        guard let raw = value?.doubleValue, raw.isFinite else { return nil }
+        return Int(min(max(raw, -1_000_000), 1_000_000))
     }
 
     /// A provider names its icon relative to its own directory, and only there: an absolute path or a
@@ -273,6 +297,9 @@ final class JSRootSearchProvider: RootSearchProvider {
     }
 
     var id: String { host.providerIDValue }
+
+    /// What the provider declared as it registered; 0 until it says otherwise.
+    var precedence: Int { host.precedence }
 
     /// The first query starts the session rather than waiting for it. A boot mounts an index and may
     /// sync one — seconds of network — and nothing on a keystroke path can wait for that, so a cold

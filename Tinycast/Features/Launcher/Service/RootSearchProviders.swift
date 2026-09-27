@@ -86,6 +86,10 @@ struct RootSearchCandidate: Sendable {
 protocol RootSearchProvider: AnyObject {
     /// Stable per provider, e.g. `movies`.
     var id: String { get }
+    /// Where this provider's rows sit among other providers' rows when a query cannot tell them apart:
+    /// a higher precedence wins (see `LauncherPriority`). Absent — the default below — keeps the
+    /// score-only ordering a provider has always had.
+    var precedence: Int { get }
     /// Return up to `limit` candidates for `query`. May be slow (a JS provider's round-trip), so the
     /// coordinator awaits it off the render path and drops it past the deadline. A provider with a cold
     /// start boots itself here without waiting: a boot mounts an index and may sync one, and no
@@ -104,6 +108,7 @@ protocol RootSearchProvider: AnyObject {
 }
 
 extension RootSearchProvider {
+    var precedence: Int { 0 }
     func release() async {}
     func warm() {}
 }
@@ -289,9 +294,11 @@ final class RootSearchProviders {
         for (index, provider) in providers.enumerated() {
             Task { @MainActor in
                 let candidates = await provider.candidates(for: trimmed, limit: self.resultCap)
+                // Read after the answer: a cold provider registers — and so declares its precedence —
+                // while answering, and this is the first moment the query can carry it.
                 self.collect(
-                    candidates, providerID: provider.id, at: index, query: trimmed,
-                    generation: generation)
+                    candidates, providerID: provider.id, precedence: provider.precedence,
+                    at: index, query: trimmed, generation: generation)
             }
         }
         let expiresAt = ContinuousClock.now.advanced(by: .milliseconds(settleMs))
@@ -307,8 +314,8 @@ final class RootSearchProviders {
     /// is appended rather than ranked, so a provider that took a second cannot push a row in above
     /// results the user is already reading.
     private func collect(
-        _ candidates: [RootSearchCandidate], providerID: String, at index: Int, query: String,
-        generation: Int
+        _ candidates: [RootSearchCandidate], providerID: String, precedence: Int, at index: Int,
+        query: String, generation: Int
     ) {
         guard generation == self.generation, collected.indices.contains(index) else { return }
         // Timed where the answer lands: a superseded one never reaches here, which is what keeps an
@@ -320,7 +327,8 @@ final class RootSearchProviders {
                 milliseconds: Double(elapsed.components.seconds) * 1000
                     + Double(elapsed.components.attoseconds) / 1e15)
         }
-        collected[index] = Self.entry(providerID: providerID, candidates: candidates)
+        collected[index] = Self.entry(
+            providerID: providerID, precedence: precedence, candidates: candidates)
         answered += 1
         guard publishedGeneration == generation else { return }
         // Already settled: this provider missed the frame, so its rows go to the end of the list.
@@ -383,10 +391,11 @@ final class RootSearchProviders {
     /// The transient `AppEntry`s a provider's candidates become. Title is `.name` (strongest);
     /// keywords ride as `.translation` (weaker, so a director hit loses to a title hit); the
     /// provider id is `.owner`, the weakest literal band, the same trust asked of an extension title.
-    /// Each candidate with the actions it listed, so the row's menu can be built without asking the
-    /// provider again.
+    /// The provider's declared precedence rides along, so a query that cannot tell its row from
+    /// another provider's still knows which provider's answer the user meant. Each candidate with the
+    /// actions it listed, so the row's menu can be built without asking the provider again.
     static func entry(
-        providerID: String, candidates: [RootSearchCandidate]
+        providerID: String, precedence: Int, candidates: [RootSearchCandidate]
     ) -> [(entry: AppEntry, actions: [RootSearchAction])] {
         candidates.map { candidate -> (entry: AppEntry, actions: [RootSearchAction]) in
             let id = "root-search:\(providerID):\(candidate.id)"
@@ -397,7 +406,7 @@ final class RootSearchProviders {
                 subtitle: candidate.subtitle,
                 // Display label: the provider's own singular label ("Movie"), else the id capitalized.
                 ownerName: candidate.label ?? providerID.localizedCapitalized,
-                providerScore: candidate.score)
+                providerScore: candidate.score, providerPrecedence: precedence)
             // A provider may ship the row's own icon beside its bundle; it wins over a streamed poster,
             // because it is the deliberate one. Both are async or cached — never a fetch on this path.
             if let path = candidate.iconPath {

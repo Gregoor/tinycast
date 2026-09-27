@@ -1,11 +1,14 @@
 // Tinycast-specific root-search provider API (`@tinycast/api`), plan §2-4. Not part of @raycast/api:
 // real Raycast has no result-provider hook, so this only exists in Tinycast.
 //
-// An extension calls `registerRootSearchProvider({ id, search, perform })` from a command's default
-// export. While that command's session stays mounted (Tinycast keeps a mounted session resident
-// across keystrokes), Swift asks `search(query, { limit, signal })` per root-query keystroke and
-// routes activation of a returned candidate to `perform(resultId, actionId)`, where `actionId` is one
-// of the actions the candidate itself listed — `undefined` for the first, which is the default.
+// An extension calls `registerRootSearchProvider({ id, search, perform, precedence })` from a
+// command's default export. While that command's session stays mounted (Tinycast keeps a mounted
+// session resident across keystrokes), Swift asks `search(query, { limit, signal })` per root-query
+// keystroke and routes activation of a returned candidate to `perform(resultId, actionId)`, where
+// `actionId` is one of the actions the candidate itself listed — `undefined` for the first, which is
+// the default. `precedence` is where the provider's rows sit among other providers' when a query
+// cannot tell them apart: higher wins, and its own candidate `score` only separates rows of one
+// precedence. Omitting it keeps the band the provider has always had.
 
 import { hostCall } from "../host.js";
 
@@ -17,13 +20,16 @@ export function open(target, application) {
   return hostCall("system", "open", [String(target), application ?? null]);
 }
 
-export function registerRootSearchProvider({ id, search, perform }) {
+export function registerRootSearchProvider({ id, search, perform, precedence }) {
   const providerID = String(id || "");
   if (!providerID || typeof search !== "function") {
     throw new Error("registerRootSearchProvider needs { id, search }");
   }
+  // A precedence the provider did not mean as a number is no declaration, rather than a surprising
+  // one; Swift treats it the same way.
+  const declared = Number.isFinite(precedence) ? Math.trunc(precedence) : 0;
   // Register into Swift, then attach the JS callbacks that `__tinycast.rootSearchQuery` routes to.
-  const token = hostCall("rootSearch", "register", [providerID]);
+  const token = hostCall("rootSearch", "register", [providerID, declared]);
   registered.set(providerID, { search, perform: typeof perform === "function" ? perform : null });
 
   // Unregister is not strictly needed for v1 (a mounted session lives and dies with its command),

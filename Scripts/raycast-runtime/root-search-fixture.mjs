@@ -29,6 +29,7 @@ const check = (label, cond, extra = "") => {
 // Mutable test-observable host state, declared before the harness so the stubs can close over it.
 const hostState = {
   registered: [],
+  precedences: [],
   unregistered: [],
   results: [],
   performed: [],
@@ -95,7 +96,7 @@ function bootCfg() {
 }
 function stub(api, method, args) {
   switch (`${api}.${method}`) {
-    case "rootSearch.register": hostState.registered.push(args[0]); return { ok: true };
+    case "rootSearch.register": hostState.registered.push(args[0]); hostState.precedences.push(args[1]); return { ok: true };
     case "rootSearch.unregister": hostState.unregistered.push(args[0]); return null;
     case "rootSearch.results":
       hostState.results.push({ requestId: args[0], candidates: args[1], error: args[2] });
@@ -123,6 +124,7 @@ import { registerRootSearchProvider, open } from "@tinycast/api";
 export default async function command() {
   registerRootSearchProvider({
     id: "movies",
+    precedence: 2,
     async search(query, { limit }) {
       if (query === "matrix") {
         return [
@@ -147,6 +149,9 @@ export default async function command() {
       await open("https://example.test/wiki/" + resultId, "Safari");
     },
   });
+
+  // A second provider that declares no precedence at all, so the default band is exercised too.
+  registerRootSearchProvider({ id: "unsigned", async search() { return []; } });
 }
 `;
 
@@ -163,6 +168,13 @@ async function main() {
   await accept(200);
 
   check("provider registered into Swift", hostState.registered.includes("movies"), String(hostState.registered));
+  // The provider's declared precedence rides on the same registration, in the same call, so Swift
+  // never has to infer a provider's identity from a row.
+  check("declared precedence reached Swift", hostState.precedences[0] === 2, String(hostState.precedences));
+  // A provider that declares none is the default band — 0 — not a rejection.
+  check("a provider with no precedence reads as 0",
+    hostState.registered[1] === "unsigned" && hostState.precedences[1] === 0,
+    String(hostState.precedences));
 
   // Fire a query: Swift calls __tinycast.rootSearchQuery, JS runs `search`, replies via results.
   harness.call(`__tinycast.rootSearchQuery("s1", "movies", "matrix", 10, "req-1")`);

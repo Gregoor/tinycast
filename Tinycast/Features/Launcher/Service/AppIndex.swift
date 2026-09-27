@@ -111,7 +111,8 @@ struct AppEntry: Identifiable, Hashable, Sendable {
         /// Only an application: a pane or a shortcut dropped on another app opens nothing there.
         let canDragOut: Bool
         let isSymbolIcon: Bool
-        /// Breaks a full tie, apps first: Calculator over Calculator History.
+        /// The kind's unit in the priority scale — see `LauncherPriority`. Breaks a full tie, apps
+        /// first: Calculator over Calculator History.
         let rankPriority: Int
     }
 
@@ -142,6 +143,10 @@ struct AppEntry: Identifiable, Hashable, Sendable {
     /// provider's other rows only — see `rankPriority(for:)`. Nil everywhere else, which is every
     /// persisted entry.
     var providerScore: Double?
+    /// The precedence the row's provider declared, which orders it against *another* provider's row
+    /// where its own score cannot — see `rankPriority(for:)`. Nil everywhere else, which is every
+    /// persisted entry; a provider that declares none lands as 0.
+    var providerPrecedence: Int?
     /// When it landed on disk, so a fresh install can be suggested before its first open.
     var installedAt: Date?
     /// The searchable form of every field above, built at publish by `buildSearchProfile`.
@@ -783,11 +788,15 @@ final class AppIndex {
             boostedTerms: CommandCatalog.command(for: entry)?.boostedTerms ?? [])
     }
 
-    /// A provider row's own strength decides, because every provider row shares `.extensionResult` and
-    /// would otherwise order by nothing but title collation. The band sits below every native kind, so
-    /// a query that cannot tell two rows apart still prefers the app.
+    /// A provider row is separated from another provider's by its declared precedence first and by the
+    /// provider's own strength only within that precedence, because every provider row shares
+    /// `.extensionResult` and two providers' scores are scales that do not correspond. The whole band
+    /// sits below every native kind, so a query that cannot tell a row apart from an app still prefers
+    /// the app. See `LauncherPriority`.
     private static func rankPriority(for entry: AppEntry) -> Int {
-        guard let score = entry.providerScore else { return entry.kind.descriptor.rankPriority }
-        return -1000 + Int((min(max(score, 0), 1) * 999).rounded())
+        guard let score = entry.providerScore else {
+            return LauncherPriority.native(rank: entry.kind.descriptor.rankPriority)
+        }
+        return LauncherPriority.provider(precedence: entry.providerPrecedence ?? 0, score: score)
     }
 }

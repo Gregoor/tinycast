@@ -10,9 +10,10 @@ earliest scope wins).
   A new category means a new case, a slice in `AppIndex.publishEntries()`, and the matching filter in
   `LauncherList.rows`, in that order.
 - **A root-search provider's row is ranked, not appended.** `RootSearchProviders` hands it to the same
-  `LauncherOrder` pass as every app — its title as the searchable name, its keywords as alternates, its
-  own `score` in a band below every `KindDescriptor.rankPriority`. So relevance decides against native
-  rows, the provider's own strength decides between its rows, and a full tie still goes to the app.
+  `LauncherOrder` pass as every app — its title as the searchable name, its keywords as alternates, and
+  its `LauncherPriority` in a band below every native kind. So relevance decides against native rows,
+  the provider's declared precedence decides against another provider's rows, its own `score` decides
+  within one precedence, and a full tie still goes to the app.
 - **A category's switch is a master switch, not a list filter.** `VisibilityStore.isKindEnabled` gates
   `orderedResults` *and* `HotKeyManager.perform`, so `Enable Applications` off stops the per-app chords
   as well as the rows — the guard sits in the one dispatch funnel, the way each feature switch already
@@ -147,6 +148,14 @@ the Zed app: rule 3 only protects an exact title past three characters.
 - **Apps win the ties.** `KindDescriptor.rankPriority` puts applications (4) above command-like kinds
   (3), quicklinks (2), and System Settings panes and meetings (1), so a first-party app is never
   shadowed by the Tinycast command named after it: Calculator over Calculator History.
+- **A provider's precedence outranks another provider's score.** `LauncherPriority` gives each native
+  kind one unit — the rank above, scaled — and puts every root-search row in the units below them: the
+  provider's declared `precedence` picks the unit (higher wins) and its own `score` fills that unit's
+  thousandths. So two providers' scores, each relative to its own matcher, are never compared against
+  each other; the movie provider outranks the encyclopedia, and the encyclopedia's better-scoring
+  article about a show no longer leads the show. A provider that declares nothing lands exactly where
+  it did before — `-1000 + round(score × 999)`, the lowest unit — and a row's tie with an app still
+  goes to the app.
 - **One boosted command.** Only AI Chat carries boosted terms (`CommandID.boostedTerms`); boosting Show
   Notes would shadow Apple's Notes.
 - **Two entries with the same alias** fall through to the next rule.
